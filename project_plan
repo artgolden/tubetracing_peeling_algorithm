@@ -1,0 +1,22 @@
+Input data: half of the embryo imaged with 2 merged illuminations, assuming that there are exacly only half of embryo in the volume. Such that the center axis of the embryo lays on the last plane. Will need to expand this later!
+- max projection -> 
+  median filter -> 
+  thresholding and detection of embryo ->
+  outscribe an ellipse ->
+  get coords of ellipse foci
+- downsample raw volume ->
+  crop only region around the embryo (at first pass skip this, assume cropped volume as input) (save cropped volume in cartesian coords) ->
+  transform volume to cylindrical coords such that line between ellipse foci is the axis of the cylinder 
+- perform raytracing (simple one for now) with finding the signal intensity rise when going from out in along the ray. Take only the region of the ray that makes biological sense (later). At first just do all rays going perpendicular from cylinder axis, later do rays spreading on halfspheres from the ellipse foci. ->
+  coords of signal rise along the ray -> 
+  discard outliers (that detect surface significantly away along the ray than their neighbours) (later) ->
+  convert back to cortesian coords
+- Point cloud to mesh ->
+  upscale (from previous image downscaling) mesh (later) ->
+  smooth mesh ->
+  smooth mesh shape with alpha-folds (later) optional?
+- convert mesh to 3D mask ->
+  erode mask by several layers ->
+  delete mask from downsampled (full res later) cropped transformed volume -> save 3D tiff and max proj of peeled.
+  convert mesh coords back to orignal raw image (later)
+- Do simple sylindrical max projection from 3D peeled volume
