@@ -1,0 +1,772 @@
+{
+  "timelapse": {
+    "timepoints": 960,
+    "interval_sec": 180
+  },
+  "specimens": [
+    {
+      "userDefinedIndex": 1,
+      "X": -6855260,
+      "Y": 8000000,
+      "Z_first_plane_nm": 7108315,
+      "number_of_planes": 85,
+      "spacing_nm": 2340,
+      "angle_millideg": -77000,
+      "objectives": [
+        -44440,
+        171100,
+        357410
+      ],
+      "areChannelsInterleaved": false,
+      "channels": [
+        {
+          "illSourceIdxInHWConfig": 0,
+          "illuminationLineWithinSelectedSource": 1,
+          "illuminationWavelengthNm": 561,
+          "illuminationPowerPercent": 26.0,
+          "illuminationPowerMicroW": 498.0,
+          "camerasEnabled": [
+            false,
+            true,
+            false
+          ],
+          "filters": [
+            4
+          ],
+          "lightsheetsEnabled": [
+            true,
+            true
+          ],
+          "lightsheetYoffsets": [
+            31438,
+            30459
+          ],
+          "lightsheetZoffsets": [
+            21855,
+            43863
+          ],
+          "lightsheetHeights": [
+            62,
+            62
+          ],
+          "userDefinedIndex": 0,
+          "exposure_sec": 0.00800000037997961
+        }
+      ],
+      "selected_channel_index": 0,
+      "new_channel_index": 0
+    },
+    {
+      "userDefinedIndex": 2,
+      "X": -6605260,
+      "Y": 8000000,
+      "Z_first_plane_nm": 7648315,
+      "number_of_planes": 72,
+      "spacing_nm": 2340,
+      "angle_millideg": -27000,
+      "objectives": [
+        -44440,
+        171100,
+        357410
+      ],
+      "areChannelsInterleaved": false,
+      "channels": [
+        {
+          "illSourceIdxInHWConfig": 0,
+          "illuminationLineWithinSelectedSource": 1,
+          "illuminationWavelengthNm": 561,
+          "illuminationPowerPercent": 26.0,
+          "illuminationPowerMicroW": 498.0,
+          "camerasEnabled": [
+            false,
+            true,
+            false
+          ],
+          "filters": [
+            4
+          ],
+          "lightsheetsEnabled": [
+            true,
+            true
+          ],
+          "lightsheetYoffsets": [
+            31438,
+            30459
+          ],
+          "lightsheetZoffsets": [
+            21855,
+            43863
+          ],
+          "lightsheetHeights": [
+            62,
+            62
+          ],
+          "userDefinedIndex": 0,
+          "exposure_sec": 0.00800000037997961
+        }
+      ],
+      "selected_channel_index": 0,
+      "new_channel_index": 0
+    }
+  ],
+  "lightsheet": {
+    "Lightsheets": [
+      {
+        "Axes": [
+          {
+            "StepSelected": "100",
+            "Position": 31438,
+            "WorkPosition": 42570
+          },
+          {
+            "StepSelected": "10",
+            "Position": 21855,
+            "WorkPosition": 34248
+          },
+          {
+            "StepSelected": "1",
+            "Position": 62,
+            "WorkPosition": 255
+          }
+        ],
+        "IsEnabled": true
+      },
+      {
+        "Axes": [
+          {
+            "StepSelected": "100",
+            "Position": 30459,
+            "WorkPosition": 0
+          },
+          {
+            "StepSelected": "10",
+            "Position": 43863,
+            "WorkPosition": 0
+          },
+          {
+            "StepSelected": "1",
+            "Position": 62,
+            "WorkPosition": 0
+          }
+        ],
+        "IsEnabled": true
+      }
+    ],
+    "Lightsheetselected": 0,
+    "Location": "0, 0",
+    "IsActive": false
+  },
+  "objective_stages": {
+    "Axes": [
+      {
+        "StepSelected": "0.1",
+        "Position": -44440,
+        "WorkPosition": -44440
+      },
+      {
+        "StepSelected": "0.1",
+        "Position": 171100,
+        "WorkPosition": 171000
+      },
+      {
+        "StepSelected": "0.1",
+        "Position": 357410,
+        "WorkPosition": 357410
+      }
+    ],
+    "Location": "0, 0",
+    "IsActive": false
+  },
+  "imaging": {
+    "Cameras": [
+      {
+        "Size": "0, 0",
+        "Location": "0, 0",
+        "Configs": "<device_state libver=\"3.5\" filemajor=\"1\" fileminor=\"0\">\n    <device name=\"DMK 33UX174\" base_name=\"DMK 33UX174\" unique_name=\"DMK 33UX174 24420124\">\n        <videoformat>Y800 (1920x1200)</videoformat>\n        <fps>162.001037</fps>\n        <fliph>0</fliph>\n        <flipv>0</flipv>\n        <vcdpropertyitems>\n            <item guid=\"{8E972004-3B94-4AA4-A899-65F6A1432713}\" name=\"Startup Behavior\" />\n            <item guid=\"{284C0E06-010B-45BF-8291-09D90A459B28}\" name=\"Brightness\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Value\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E03}\" value=\"238\" />\n                </element>\n            </item>\n            <item guid=\"{284C0E0A-010B-45BF-8291-09D90A459B28}\" name=\"Sharpness\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Value\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E03}\" value=\"0\" />\n                </element>\n            </item>\n            <item guid=\"{284C0E0B-010B-45BF-8291-09D90A459B28}\" name=\"Gamma\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Value\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E08}\" value=\"1.000000\" />\n                </element>\n            </item>\n            <item guid=\"{284C0E0F-010B-45BF-8291-09D90A459B28}\" name=\"Gain\">\n                <element guid=\"{B57D3001-0AC6-4819-A609-272A33140ACA}\" name=\"Auto\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"0\" />\n                </element>\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Value\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E08}\" value=\"32.000000\" />\n                </element>\n            </item>\n            <item guid=\"{49FC0326-2042-44A9-9712-CB390AEB2B50}\" name=\"Multi-Frame Output Mode\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Enable\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"0\" />\n                </element>\n            </item>\n            <item guid=\"{90D5702E-E43B-4366-AAEB-7A7A10B448B4}\" name=\"Exposure\">\n                <element guid=\"{B57D3001-0AC6-4819-A609-272A33140ACA}\" name=\"Auto\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"0\" />\n                </element>\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Value\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E08}\" value=\"0.008000\" />\n                </element>\n                <element guid=\"{65190390-1AD8-4E91-9021-66D64090CC85}\" name=\"Auto\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"1\" />\n                </element>\n                <element guid=\"{6519038C-1AD8-4E91-9021-66D64090CC85}\" name=\"Auto Reference\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E03}\" value=\"128\" />\n                </element>\n            </item>\n            <item guid=\"{90D57031-E43B-4366-AAEB-7A7A10B448B4}\" name=\"Trigger\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Enable\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"1\" />\n                </element>\n                <element guid=\"{B89A9D2C-51FD-4C2D-80DF-89B642781B7E}\" name=\"Noise Suppression Time\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E08}\" value=\"0.000000\" />\n                </element>\n                <element guid=\"{6A9D1F4E-B0AB-4472-9BB3-C6448A1D49DA}\" name=\"Debounce Time\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E08}\" value=\"0.000000\" />\n                </element>\n                <element guid=\"{B4109964-77E4-4AF3-ACA8-45BBAA861B5C}\" name=\"Burst Count\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E03}\" value=\"1\" />\n                </element>\n                <element guid=\"{6519038D-1AD8-4E91-9021-66D64090CC85}\" name=\"Polarity\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"0\" />\n                </element>\n                <element guid=\"{9CF42696-7C51-4BFE-8D83-296D729C42A2}\" name=\"Mask Time\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E08}\" value=\"0.000000\" />\n                </element>\n                <element guid=\"{C337CFB8-EA08-4E69-A655-586937B6AFEC}\" name=\"Delay\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E08}\" value=\"3.100000\" />\n                </element>\n                <element guid=\"{B6E013CA-76C7-4DDD-9AC8-A17E07C5E3F1}\" name=\"Exposure Mode\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E06}\" value=\"0\" />\n                </element>\n            </item>\n            <item guid=\"{C3C9944A-E6F6-4E25-A0BE-53C066AB65D8}\" name=\"Denoise\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Value\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E03}\" value=\"0\" />\n                </element>\n            </item>\n            <item guid=\"{E33B9C58-0BF8-442D-8035-B4ABD7AF44AA}\" name=\"Flip Horizontal\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Enable\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"0\" />\n                </element>\n            </item>\n            <item guid=\"{E33B9C58-0BF8-442D-8035-B4ABD7AF44AB}\" name=\"Flip Vertical\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Enable\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"0\" />\n                </element>\n            </item>\n            <item guid=\"{86D89D69-9880-4618-9BF6-DED5E8383449}\" name=\"GPIO\">\n                <element guid=\"{7D006621-761D-4B88-9C5F-8B906857A501}\" name=\"GP Out\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E03}\" value=\"0\" />\n                </element>\n            </item>\n            <item guid=\"{4F95A06D-9C15-407B-96AB-CF3FED047BA4}\" name=\"Binning factor\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Value\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E06}\" value=\"1\" />\n                </element>\n            </item>\n            <item guid=\"{546541AD-C815-4D82-AFA9-9D59AF9F399E}\" name=\"Highlight Reduction\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Enable\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"0\" />\n                </element>\n            </item>\n            <item guid=\"{3D505AC4-1A28-428B-83E5-85AA8EB441C1}\" name=\"Tone Mapping\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Enable\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"0\" />\n                </element>\n            </item>\n            <item guid=\"{2CED6FD6-AB4D-4C74-904C-D682E53B9CC5}\" name=\"Partial scan\">\n                <element guid=\"{36EAA683-3321-44BE-9D73-E1FD4C3FDB87}\" name=\"Auto-center\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"1\" />\n                </element>\n            </item>\n            <item guid=\"{DC320EDE-DF2E-4A90-B926-71417C71C57C}\" name=\"Strobe\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Enable\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"1\" />\n                </element>\n                <element guid=\"{B41DB628-0975-43F8-A9D9-7E0380580ACA}\" name=\"Polarity\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"1\" />\n                </element>\n                <element guid=\"{B41DB628-0975-43F8-A9D9-7E0380580ACC}\" name=\"Delay\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E03}\" value=\"0\" />\n                </element>\n                <element guid=\"{B41DB628-0975-43F8-A9D9-7E0380580ACD}\" name=\"Mode\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E06}\" value=\"2\" />\n                </element>\n            </item>\n            <item guid=\"{124922E5-81C7-4587-867D-7BA16AF79079}\" name=\"Auto Functions ROI\">\n                <element guid=\"{B57D3000-0AC6-4819-A609-272A33140ACA}\" name=\"Enabled\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E04}\" value=\"1\" />\n                </element>\n                <element guid=\"{93D840ED-B7B8-45FE-91E2-18E68C41AFC3}\" name=\"Preset\">\n                    <itf guid=\"{99B44940-BFE1-4083-ADA1-BE703F4B8E06}\" value=\"2\" />\n                </element>\n            </item>\n        </vcdpropertyitems>\n    </device>\n</device_state>\n"
+      }
+    ],
+    "Size": "0, 0",
+    "Location": "0, 0",
+    "IsActive": false
+  },
+  "hardware_parameters": {
+    "Cameras": [
+      {
+        "Name": "The Imaging Source DMK33UX174",
+        "SerialNumber": 24420124,
+        "IndexOnMicrocontroller": 1,
+        "Type": "Front",
+        "ShutterMax": 5000.0,
+        "ShutterMin": 20.0,
+        "PixelsHorizontal": 4096,
+        "PixelsVertical": 3000,
+        "FPSMax": 200.0,
+        "PixelSpacingHorizontal": 5.86,
+        "PixelSpacingVertical": 5.86,
+        "BitsPerPixel": 14,
+        "Binning": 1,
+        "DefaultVideoFormat": "Y800 (1920x1200)"
+      }
+    ],
+    "StageAxes": [
+      {
+        "Name": "X",
+        "Type": "M-126.DG1",
+        "Inverted": false,
+        "Steps": [
+          "0.1",
+          "1",
+          "10",
+          "50",
+          "100"
+        ],
+        "HardwareLimitMin": -15000000,
+        "HardwareLimitMax": 5000000,
+        "SoftwareLimitMin": -15000000,
+        "SoftwareLimitMax": 5000000,
+        "HomePosition": 0
+      },
+      {
+        "Name": "Y",
+        "Type": "SLC-24180-D",
+        "Inverted": true,
+        "Steps": [
+          "0.1",
+          "1",
+          "10",
+          "50",
+          "100"
+        ],
+        "HardwareLimitMin": 0,
+        "HardwareLimitMax": 20500000,
+        "SoftwareLimitMin": 0,
+        "SoftwareLimitMax": 20500000,
+        "HomePosition": 20500000
+      },
+      {
+        "Name": "Z",
+        "Type": "SLC-2445-D",
+        "Inverted": false,
+        "Steps": [
+          "0.1",
+          "1",
+          "10",
+          "50",
+          "100"
+        ],
+        "HardwareLimitMin": -28000000,
+        "HardwareLimitMax": 13250000,
+        "SoftwareLimitMin": -5000000,
+        "SoftwareLimitMax": 9600000,
+        "HomePosition": 0
+      },
+      {
+        "Name": "Rotation",
+        "Type": "M-116.DG",
+        "Inverted": false,
+        "Steps": [
+          "0.1",
+          "1",
+          "5",
+          "45",
+          "90"
+        ],
+        "HardwareLimitMin": -360000,
+        "HardwareLimitMax": 359000,
+        "SoftwareLimitMin": -360000,
+        "SoftwareLimitMax": 359000,
+        "HomePosition": 0
+      }
+    ],
+    "ObjectiveLenses": [
+      {
+        "Type": "EC Epiplan-Neofluar 2.5x/0.06 M27 WD: 15.1mm",
+        "Manufacturer": "Zeiss",
+        "RefractiveIndex": 1.0,
+        "NumericalAperture": 0.06,
+        "Magnification": 2.5,
+        "ObjectiveAxis": {
+          "Name": "Illumination right",
+          "Type": "P-725.4CD",
+          "Inverted": false,
+          "Steps": [
+            "0.1",
+            "1",
+            "10",
+            "50",
+            "100"
+          ],
+          "HardwareLimitMin": -11400000,
+          "HardwareLimitMax": 4000000,
+          "SoftwareLimitMin": -1200000,
+          "SoftwareLimitMax": 1200000,
+          "HomePosition": -44440
+        }
+      },
+      {
+        "Type": "W N-Achroplan 10x/0.3 M27 WD: 2.6 mm",
+        "Manufacturer": "Zeiss",
+        "RefractiveIndex": 1.0,
+        "NumericalAperture": 0.3,
+        "Magnification": 10.0,
+        "ObjectiveAxis": {
+          "Name": "Detection",
+          "Type": "P-725.4CD",
+          "Inverted": false,
+          "Steps": [
+            "0.1",
+            "1",
+            "10",
+            "50",
+            "100"
+          ],
+          "HardwareLimitMin": -800000,
+          "HardwareLimitMax": 28700000,
+          "SoftwareLimitMin": -800000,
+          "SoftwareLimitMax": 28700000,
+          "HomePosition": 171000
+        }
+      },
+      {
+        "Type": "EC Epiplan-Neofluar 2.5x/0.06 M27 WD: 15.1mm",
+        "Manufacturer": "Zeiss",
+        "RefractiveIndex": 1.0,
+        "NumericalAperture": 0.06,
+        "Magnification": 2.5,
+        "ObjectiveAxis": {
+          "Name": "Illumination left",
+          "Type": "P-725.4CD",
+          "Inverted": false,
+          "Steps": [
+            "0.1",
+            "1",
+            "10",
+            "50",
+            "100"
+          ],
+          "HardwareLimitMin": -11400000,
+          "HardwareLimitMax": 4000000,
+          "SoftwareLimitMin": -1400000,
+          "SoftwareLimitMax": 1200000,
+          "HomePosition": 357410
+        }
+      }
+    ],
+    "LightSheets": [
+      {
+        "Name": "Right",
+        "LightsheetAxes": [
+          {
+            "Name": "Yoffset",
+            "Type": "",
+            "Inverted": false,
+            "Steps": [
+              "1",
+              "10",
+              "100",
+              "1000"
+            ],
+            "HardwareLimitMin": 0,
+            "HardwareLimitMax": 65535,
+            "SoftwareLimitMin": 0,
+            "SoftwareLimitMax": 65535,
+            "HomePosition": 42570
+          },
+          {
+            "Name": "Zoffset",
+            "Type": "",
+            "Inverted": false,
+            "Steps": [
+              "1",
+              "10",
+              "100",
+              "1000"
+            ],
+            "HardwareLimitMin": 0,
+            "HardwareLimitMax": 65535,
+            "SoftwareLimitMin": 0,
+            "SoftwareLimitMax": 65535,
+            "HomePosition": 34248
+          },
+          {
+            "Name": "Yheight",
+            "Type": "",
+            "Inverted": false,
+            "Steps": [
+              "1",
+              "10",
+              "100",
+              "1000"
+            ],
+            "HardwareLimitMin": 0,
+            "HardwareLimitMax": 255,
+            "SoftwareLimitMin": 0,
+            "SoftwareLimitMax": 255,
+            "HomePosition": 255
+          }
+        ]
+      },
+      {
+        "Name": "Left",
+        "LightsheetAxes": [
+          {
+            "Name": "Yoffset",
+            "Type": "",
+            "Inverted": false,
+            "Steps": [
+              "1",
+              "10",
+              "100",
+              "1000"
+            ],
+            "HardwareLimitMin": 0,
+            "HardwareLimitMax": 65535,
+            "SoftwareLimitMin": 0,
+            "SoftwareLimitMax": 65535,
+            "HomePosition": 42570
+          },
+          {
+            "Name": "Zoffset",
+            "Type": "",
+            "Inverted": false,
+            "Steps": [
+              "1",
+              "10",
+              "100",
+              "1000"
+            ],
+            "HardwareLimitMin": 0,
+            "HardwareLimitMax": 65535,
+            "SoftwareLimitMin": 0,
+            "SoftwareLimitMax": 65535,
+            "HomePosition": 26886
+          },
+          {
+            "Name": "Yheight",
+            "Type": "",
+            "Inverted": false,
+            "Steps": [
+              "1",
+              "10",
+              "100",
+              "1000"
+            ],
+            "HardwareLimitMin": 0,
+            "HardwareLimitMax": 255,
+            "SoftwareLimitMin": 0,
+            "SoftwareLimitMax": 255,
+            "HomePosition": 255
+          }
+        ]
+      }
+    ],
+    "Lasers": [
+      {
+        "Name": "Laser",
+        "COMPort": "",
+        "LaserLines": [
+          {
+            "Name": "405nm Violet Diode Laser",
+            "DAQAddress": 2,
+            "Wavelenght": 405,
+            "PowerMax": 0.0,
+            "PowerMin": 0.0,
+            "VoltageMax": 5.0,
+            "VoltageMin": 0.0,
+            "LaserCalibrationPowerY": null,
+            "LaserCalibrationPercentageX": null
+          },
+          {
+            "Name": "561nm Green Diode Laser",
+            "DAQAddress": 3,
+            "Wavelenght": 561,
+            "PowerMax": 0.0,
+            "PowerMin": 0.0,
+            "VoltageMax": 5.0,
+            "VoltageMin": 0.0,
+            "LaserCalibrationPowerY": [
+              0.0,
+              3.0,
+              15.0,
+              34.0,
+              45.0,
+              73.0,
+              90.0,
+              131.0,
+              268.0,
+              302.0,
+              335.0,
+              375.0,
+              396.0,
+              414.0,
+              453.0,
+              498.0,
+              540.0,
+              613.0,
+              689.0,
+              791.0,
+              971.0,
+              1151.0,
+              1291.0,
+              1358.0,
+              1431.0,
+              1509.0,
+              1578.0,
+              1667.0,
+              1812.0,
+              2062.0,
+              2488.0,
+              2959.0,
+              3455.0,
+              3976.0,
+              4524.0,
+              5083.0,
+              5675.0,
+              6288.0,
+              6518.0,
+              6643.0,
+              6683.0,
+              6683.0,
+              6683.0,
+              6683.0,
+              6683.0
+            ],
+            "LaserCalibrationPercentageX": [
+              0.0,
+              5.0,
+              7.0,
+              9.0,
+              10.0,
+              12.0,
+              13.0,
+              15.0,
+              20.0,
+              21.0,
+              22.0,
+              23.0,
+              23.5,
+              24.0,
+              25.0,
+              26.0,
+              27.0,
+              28.5,
+              30.0,
+              32.0,
+              35.0,
+              38.0,
+              40.0,
+              41.0,
+              42.0,
+              43.0,
+              44.0,
+              45.0,
+              47.0,
+              50.0,
+              55.0,
+              60.0,
+              65.0,
+              70.0,
+              75.0,
+              80.0,
+              85.0,
+              90.0,
+              92.0,
+              93.0,
+              94.0,
+              95.0,
+              97.0,
+              98.0,
+              100.0
+            ]
+          },
+          {
+            "Name": "488nm Cyan Diode Laser",
+            "DAQAddress": 4,
+            "Wavelenght": 488,
+            "PowerMax": 0.0,
+            "PowerMin": 0.0,
+            "VoltageMax": 5.0,
+            "VoltageMin": 0.0,
+            "LaserCalibrationPowerY": [
+              0.0,
+              0.4,
+              0.4,
+              0.5,
+              0.5,
+              0.6,
+              0.6,
+              0.7,
+              2.4,
+              5.1,
+              15.0,
+              40.0,
+              57.0,
+              73.0,
+              104.0,
+              130.0,
+              151.0,
+              178.0,
+              204.0,
+              257.0,
+              352.0,
+              444.0,
+              509.0,
+              552.0,
+              589.0,
+              628.0,
+              664.0,
+              697.0,
+              788.0,
+              900.0,
+              1145.0,
+              1361.0,
+              1564.0,
+              1780.0,
+              1999.0,
+              2190.0,
+              2378.0,
+              2582.0,
+              2667.0,
+              2703.0,
+              2702.0,
+              2723.0,
+              2723.0,
+              2723.0,
+              2723.0
+            ],
+            "LaserCalibrationPercentageX": [
+              0.0,
+              5.0,
+              7.0,
+              9.0,
+              10.0,
+              12.0,
+              13.0,
+              15.0,
+              20.0,
+              21.0,
+              22.0,
+              23.0,
+              23.5,
+              24.0,
+              25.0,
+              26.0,
+              27.0,
+              28.5,
+              30.0,
+              32.0,
+              35.0,
+              38.0,
+              40.0,
+              41.0,
+              42.0,
+              43.0,
+              44.0,
+              45.0,
+              47.0,
+              50.0,
+              55.0,
+              60.0,
+              65.0,
+              70.0,
+              75.0,
+              80.0,
+              85.0,
+              90.0,
+              92.0,
+              93.0,
+              94.0,
+              95.0,
+              97.0,
+              98.0,
+              100.0
+            ]
+          },
+          {
+            "Name": "640nm Red Diode Laser",
+            "DAQAddress": 5,
+            "Wavelenght": 640,
+            "PowerMax": 0.0,
+            "PowerMin": 0.0,
+            "VoltageMax": 5.0,
+            "VoltageMin": 0.0,
+            "LaserCalibrationPowerY": null,
+            "LaserCalibrationPercentageX": null
+          }
+        ]
+      },
+      {
+        "Name": "Transmission",
+        "COMPort": "",
+        "LaserLines": [
+          {
+            "Name": "Transmission1",
+            "DAQAddress": 1,
+            "Wavelenght": 700,
+            "PowerMax": 0.0,
+            "PowerMin": 0.0,
+            "VoltageMax": 5.0,
+            "VoltageMin": 0.0,
+            "LaserCalibrationPowerY": null,
+            "LaserCalibrationPercentageX": null
+          },
+          {
+            "Name": "Transmission2",
+            "DAQAddress": 1,
+            "Wavelenght": 700,
+            "PowerMax": 0.0,
+            "PowerMin": 0.0,
+            "VoltageMax": 5.0,
+            "VoltageMin": 0.0,
+            "LaserCalibrationPowerY": null,
+            "LaserCalibrationPercentageX": null
+          }
+        ]
+      }
+    ],
+    "FilterWheels": [
+      {
+        "Filters": [
+          {
+            "Name": "Empty",
+            "Type": "Manufacturer's model number",
+            "EmissionWavelenght": 0,
+            "ExcitationWavelenght": 0
+          },
+          {
+            "Name": "Violet Filter 447/60 BP",
+            "Type": "Manufacturer's model number",
+            "EmissionWavelenght": 0,
+            "ExcitationWavelenght": 0
+          },
+          {
+            "Name": "Green Filter 525/50 BP",
+            "Type": "Manufacturer's model number",
+            "EmissionWavelenght": 0,
+            "ExcitationWavelenght": 0
+          },
+          {
+            "Name": "Orange Filter 607/70 BP",
+            "Type": "Manufacturer's model number",
+            "EmissionWavelenght": 0,
+            "ExcitationWavelenght": 0
+          },
+          {
+            "Name": "Red Filter 675/50 BP",
+            "Type": "Manufacturer's model number",
+            "EmissionWavelenght": 0,
+            "ExcitationWavelenght": 0
+          },
+          {
+            "Name": "Shutter",
+            "Type": "Manufacturer's model number",
+            "EmissionWavelenght": 0,
+            "ExcitationWavelenght": 0
+          }
+        ],
+        "Name": "96A351 Front",
+        "InterfaceSettings": "1,9600,8,N,2"
+      }
+    ]
+  }
+}
