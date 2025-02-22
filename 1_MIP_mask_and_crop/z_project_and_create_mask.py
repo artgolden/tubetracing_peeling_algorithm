@@ -39,7 +39,7 @@ def crop_rotated_3d(image, center, size, rotation_matrix):
         [source_coords[..., 0], 
          source_coords[..., 1], 
          source_coords[..., 2]], 
-        order=1,
+        order=1, # TODO: change to linear interpolation
         mode='nearest'
     )
     
