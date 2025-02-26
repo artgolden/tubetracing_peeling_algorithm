@@ -85,6 +85,7 @@ print("data_matrix", data_matrix.shape)
 data_matrix = np.transpose(data_matrix, (2, 1, 0))
 print("data_matrix", data_matrix.shape)
 embryo = Volume(data_matrix)
+embryo = embryo.threshold(below=17)
 print("embryo", embryo.bounds())
 
 plt = Plotter(shape=(1,5), axes=9)
@@ -96,30 +97,24 @@ hull = ConvexHull(points).alpha(0.2)
 print("hull", hull.bounds())
 plt.at(1).show(hull)
 
-vol = hull.binarize()
-vol.alpha([0,0.75]).cmap('blue5')
-print("vol", vol.bounds())
-plt.at(2).show(hull)
+vol = hull.binarize(values=(255,0),dims=embryo.shape,spacing=[1,1,1], origin=(0,0,0))
+eroded = vol.clone().dilate(neighbours=(3,3,3))
+
+
+eroded.alpha([0,0.75]).cmap('blue5')
+print("vol", eroded.bounds())
+print("vol shape", eroded.shape)
+plt.at(2).show(eroded)
+eroded = eroded.threshold(above=1, replace_value=1)
+eroded = eroded.threshold(below=254, replace_value=0)
 
 iso = vol.isosurface().color("blue5")
 print("iso", iso.bounds())
 plt.at(3).show("..the volume is isosurfaced:", iso)
 
-# Extract the voxel intensity values
-data = vol.pointdata[0]  # This is a 1D flattened array
+diff = embryo.clone().operation("*",eroded)
+plt.at(4).show(diff)
 
-# Get the volume dimensions
-dims = vol.dimensions()  # (Nx, Ny, Nz)
-
-# Reshape into a 3D NumPy array
-numpy_array = data.reshape(dims, order="F")  # "F" (Fortran order) matches VTK
-
-# Save as a .npy file
-np.save("outs/hull_binary.npy", numpy_array)
-
-# Print shape for verification
-print("Exported Volume Shape:", numpy_array.shape)
-
-plt.at(4).show(embryo)
+np.save("outs/down_cropped_minus_hull.npy", np.transpose(diff.tonumpy(), (2, 1, 0)))
 
 plt.interactive().close()
