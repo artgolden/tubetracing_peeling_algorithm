@@ -1,7 +1,7 @@
 import numpy as np
 import tifffile
 import os
-from vedo import Plotter, Points, Mesh, Text2D, ConvexHull
+from vedo import Plotter, Points, Mesh, Text2D, ConvexHull, Volume
 
 def load_3d_volume(file_path):
     """
@@ -79,8 +79,10 @@ points_raw = points_raw[:, [2, 1, 0]]
 points = Points(points_raw)
 points = points.subsample(0.005)
 
+data_matrix = load_3d_volume("outs/down_cropped.tif")
+embryo = Volume(data_matrix)
 
-plt = Plotter(shape=(1,4), axes=9)
+plt = Plotter(shape=(1,5), axes=9)
 
 
 plt.at(0).show(points)
@@ -94,5 +96,21 @@ plt.at(2).show(hull)
 
 iso = vol.isosurface().color("blue5")
 plt.at(3).show("..the volume is isosurfaced:", iso)
+
+# Extract the voxel intensity values
+data = vol.pointdata[0]  # This is a 1D flattened array
+
+# Get the volume dimensions
+dims = vol.dimensions()  # (Nx, Ny, Nz)
+
+# Reshape into a 3D NumPy array
+numpy_array = data.reshape(dims, order="F")  # "F" (Fortran order) matches VTK
+
+# Save as a .npy file
+np.save("outs/hull_binary.npy", numpy_array)
+
+# Print shape for verification
+print("Exported Volume Shape:", numpy_array.shape)
+
 
 plt.interactive().close()
