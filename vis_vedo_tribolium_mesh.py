@@ -78,9 +78,14 @@ points_raw = read_points_from_csv("outs/surface_points.csv")
 points_raw = points_raw[:, [2, 1, 0]]
 points = Points(points_raw)
 points = points.subsample(0.005)
+print("points", points.bounds())
 
 data_matrix = load_3d_volume("outs/down_cropped.tif")
+print("data_matrix", data_matrix.shape)
+data_matrix = np.transpose(data_matrix, (2, 1, 0))
+print("data_matrix", data_matrix.shape)
 embryo = Volume(data_matrix)
+print("embryo", embryo.bounds())
 
 plt = Plotter(shape=(1,5), axes=9)
 
@@ -88,13 +93,16 @@ plt = Plotter(shape=(1,5), axes=9)
 plt.at(0).show(points)
 
 hull = ConvexHull(points).alpha(0.2)
+print("hull", hull.bounds())
 plt.at(1).show(hull)
 
 vol = hull.binarize()
 vol.alpha([0,0.75]).cmap('blue5')
+print("vol", vol.bounds())
 plt.at(2).show(hull)
 
 iso = vol.isosurface().color("blue5")
+print("iso", iso.bounds())
 plt.at(3).show("..the volume is isosurfaced:", iso)
 
 # Extract the voxel intensity values
@@ -112,5 +120,6 @@ np.save("outs/hull_binary.npy", numpy_array)
 # Print shape for verification
 print("Exported Volume Shape:", numpy_array.shape)
 
+plt.at(4).show(embryo)
 
 plt.interactive().close()
