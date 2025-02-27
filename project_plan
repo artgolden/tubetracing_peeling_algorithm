@@ -7,22 +7,31 @@ Input data: half of the embryo imaged with 2 merged illuminations, assuming that
 + downsample raw volume ->
   crop only region around the embryo (at first pass skip this, assume cropped volume as input) (save cropped volume in cartesian coords) ->
   transform volume to cylindrical coords such that line between ellipse foci is the axis of the cylinder 
-- perform raytracing (simple one for now) with finding the signal intensity rise when going from out in along the ray. Take only the region of the ray that makes biological sense (later). At first just do all rays going perpendicular from cylinder axis, later do rays spreading on halfspheres from the ellipse foci. ->
++ perform raytracing (simple one for now) with finding the signal intensity rise when going from out in along the ray. Take only the region of the ray that makes biological sense (later). At first just do all rays going perpendicular from cylinder axis, later do rays spreading on halfspheres from the ellipse foci. ->
   coords of signal rise along the ray -> 
   discard outliers (that detect surface significantly away along the ray than their neighbours) (later) ->
   convert back to cortesian coords
-- Point cloud to mesh ->
++ Point cloud to mesh ->
   upscale (from previous image downscaling) mesh (later) ->
   smooth mesh ->
   smooth mesh shape with alpha-folds (later) optional?
-- convert mesh to 3D mask ->
++ convert mesh to 3D mask ->
   erode mask by several layers ->
   delete mask from downsampled (full res later) cropped transformed volume -> save 3D tiff and max proj of peeled.
   convert mesh coords back to orignal raw image (later)
-- Do simple sylindrical max projection from 3D peeled volume
+- Do simple cylindrical max projection from 3D peeled volume
 
 Ongoing problems and questions:
-- A lot of erroneours detections inside the embryo. But convex hull gives prety good estimate nonetheless.
+x A lot of erroneours detections inside the embryo. But convex hull gives prety good estimate nonetheless.
 - Try 3d median filter for better detection?
-- Or some other form of 3d denoising?
-- there are lots of detections around the origin of the polar coords, why is that?
+x Or some other form of 3d denoising?
+x there are lots of detections around the origin of the polar coords, why is that? = Looks like it was because of the rays pointing away from the image volume, limiting Phi to 0:Pi/2 solved it.
+
+Current TODO:
++ Add embryo projection outline as a countour of points at Z=max for the convexHull to be extending to volume border.
+- Integrate convexHull, binarization and substraction from the image using vedo library into main code
+- Export binarized substraction mask as a file and the substraction volume center point such that later it can be used for the plugin of manual surface substraction correction.
+
+For later:
+- Find parameter value for alpha shapes that are good for bean shaped embryos instead of convexHull
+- Write a Napari plugin that allows to manually correct the substraction mask by clicking on the cartography projection, and thus adding or sustracting from the surface of the substraction mask volume at a correspoinding location. It will probably be convenient to have substraction mask be in cylindrical coordinates same as the cartography projection.

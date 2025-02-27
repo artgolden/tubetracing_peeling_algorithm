@@ -4,7 +4,10 @@ import numpy as np
 from scipy.interpolate import interpn
 import scipy.ndimage as ndimage
 import pyvista as pv
-
+from skimage import filters
+from skimage import morphology
+from skimage import measure
+import cv2
 
 
 def load_3d_volume(file_path):
@@ -275,7 +278,7 @@ def create_surface_mesh(signal_starts, origin, theta_res, phi_res, max_dist):
     return surface
 
 
-def export_signal_points(signal_starts, origin, theta_res, phi_res, orig_vol_shape, phi_max, output_file="outs/surface_points.csv"):
+def export_signal_points(signal_starts, origin, theta_res, phi_res, orig_vol_shape, phi_max):
     """
     Exports the 3D coordinates of detected signals (in ZYX order) to a CSV file.
     The resulting file can be loaded as a point cloud in napari and overlaid on the original image.
@@ -311,20 +314,48 @@ def export_signal_points(signal_starts, origin, theta_res, phi_res, orig_vol_sha
 
             x = round(x, 3)
             y = round(y, 3)
-            z = round(orig_vol_shape[0] - z, 3) # flipping the z axis to match the original image, since we flipped the original volume for processing
+            z = round(orig_vol_shape[0] - 1 - z, 3) # flipping the z axis to match the original image, since we flipped the original volume for processing
 
             # Append the point in ZYX order
             points.append([z, y, x])
 
-    points = np.array(points)
+    return np.array(points)
 
-    # Ensure the output directory exists
+
+def add_projected_embryo_outline_points(volume_shape, points) -> np.ndarray:
+    """    
+    Adds projected embryo outline points to the given set of points.    
+    The function takes the volume shape and a set of points, and creates a new set of points by projecting the points with a z-coordinate greater than 80% of the maximum z-coordinate onto the maximum z-plane. These projected points are then concatenated to the original set of points.
+    This is done to ensure that convex hull later extends to the volume boundary.
+    
+    Args:
+        volume_shape (tuple): The shape of the volume.
+        points (numpy.ndarray): The set of points to which the projected points will be added.
+    Returns:
+        numpy.ndarray: The updated set of points with the projected points added.
+    """        
+    max_z = volume_shape[0] - 1
+    p_proj = points.copy()
+    p_proj = p_proj[p_proj[:,0] > max_z * 0.8]
+    p_proj[:,0] = max_z
+    more_points = np.concatenate((points, p_proj))
+    return more_points
+
+
+
+def save_points_to_csv(points, output_file):
+    """
+    Save the given points to a CSV file.
+    """
+        # Ensure the output directory exists
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     # Save the points to a CSV file with a header
     np.savetxt(output_file, points, delimiter=",", header="z,y,x", comments="", fmt='%.3f')
 
     print(f"Exported {points.shape[0]} signal points to {output_file}")
+
+
 
 def find_background_std(volume):
     """
@@ -389,8 +420,10 @@ if __name__ == "__main__":
         polar_volume = cartesian_to_polar(volume, origin, phi_max = phi_max)
         signals = raytracing_in_polar(polar_volume, bkg_std)
         filtered_signals = filter_high_rho_outliers(signals)
-        export_signal_points(filtered_signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
-    
+        points = export_signal_points(filtered_signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
+        points = add_projected_embryo_outline_points(volume.shape, points)
+        save_points_to_csv(points, "outs/surface_points.csv")
+
         print("Original volume shape:", volume.shape)
         print("Polar volume shape:", polar_volume.shape)
         # print("Polar volume:", polar_volume)
