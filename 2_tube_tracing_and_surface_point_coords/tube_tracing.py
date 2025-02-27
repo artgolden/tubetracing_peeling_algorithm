@@ -3,11 +3,7 @@ import os
 import numpy as np
 from scipy.interpolate import interpn
 import scipy.ndimage as ndimage
-import pyvista as pv
-from skimage import filters
-from skimage import morphology
-from skimage import measure
-import cv2
+from vedo import Plotter, Points, ConvexHull, Volume
 
 
 def load_3d_volume(file_path):
@@ -90,6 +86,47 @@ def cartesian_to_polar(volume, origin, rho_res=1, theta_res=360, phi_res=180, ph
     )
 
     return polar_volume
+
+
+def find_background_std(volume):
+    """
+    Find the standard deviation of the background in a 3D volume from a 50x50x50 corner cube.
+    """
+    # Calculate full image min and max
+    vmin = volume.min()
+    vmax = volume.max()
+    full_range = vmax - vmin
+    # Background threshold: values must not exceed 20% above the minimum
+    threshold = vmin + 0.2 * full_range
+
+    cube_found = None
+    # Define the eight corners (z, y, x) for a 50x50x50 cube.
+    corners = [
+        (0, 0, 0),
+        (0, 0, volume.shape[2] - 50),
+        (0, volume.shape[1] - 50, 0),
+        (0, volume.shape[1] - 50, volume.shape[2] - 50),
+        (volume.shape[0] - 50, 0, 0),
+        (volume.shape[0] - 50, 0, volume.shape[2] - 50),
+        (volume.shape[0] - 50, volume.shape[1] - 50, 0),
+        (volume.shape[0] - 50, volume.shape[1] - 50, volume.shape[2] - 50)
+    ]
+
+    for corner in corners:
+        z, y, x = corner
+        cube = volume[z:z+50, y:y+50, x:x+50]
+        # Check if no voxel in cube exceeds the threshold.
+        if cube.max() <= threshold:
+            cube_found = cube
+            break
+
+    if cube_found is None:
+        cube_found = volume[0:50, 0:50, 0:50]
+        print("Warning: Could not find a background cube with values below threshold; using default first corner.")
+
+    bkg_std = np.std(cube_found)
+    print(f"Background standard deviation: {bkg_std}")
+    return bkg_std
 
 
 def detect_signal_start(intensity, bkg_std, smoothing_window=4, threshold_factor=2.5):
@@ -209,75 +246,6 @@ def filter_high_rho_outliers(signal_starts, threshold_factor=1.2, min_neighbors=
     return filtered_signal_starts
 
 
-def create_surface_mesh(signal_starts, origin, theta_res, phi_res, max_dist):
-    """
-    Creates a surface mesh object in Cartesian coordinates from the signal_starts array,
-    representing the detected signal start locations in 3D space.
-
-    Args:
-        signal_starts (numpy.ndarray): A 2D numpy array (theta x phi) containing rho indices where signals start.
-                                        -1 or similar values indicate no signal detected.
-        origin (tuple):  (z0, y0, x0) origin of the polar coordinate system in Cartesian coordinates.
-        theta_res (int): Number of samples along the azimuthal (theta) direction.
-        phi_res (int): Number of samples along the polar (phi) direction.
-        max_dist (float): The maximum radial distance used when converting to polar coordinates. This is important for scaling the rho values back to cartesian.
-
-    Returns:
-        pyvista.PolyData: A pyvista PolyData object representing the surface mesh.
-    """
-
-    z0, y0, x0 = origin
-
-    # Create theta and phi arrays
-    theta = np.linspace(0, 2 * np.pi, theta_res)
-    phi = np.linspace(0, np.pi, phi_res)
-
-    # Create a meshgrid of theta and phi values
-    theta_grid, phi_grid = np.meshgrid(theta, phi, indexing='xy')  # Use 'xy' indexing for consistent array shapes
-
-    # Prepare arrays to store Cartesian coordinates
-    x = np.zeros_like(theta_grid)
-    y = np.zeros_like(theta_grid)
-    z = np.zeros_like(theta_grid)
-
-    # Convert polar coordinates to Cartesian coordinates
-    for i in range(theta_res):
-        for j in range(phi_res):
-            rho_index = signal_starts[i, j]
-
-            if rho_index != -1:  # Only process points with detected signals
-                rho = rho_index
-
-                x[i, j] = rho * np.sin(phi_grid[i, j]) * np.cos(theta_grid[i, j]) + x0
-                y[i, j] = rho * np.sin(phi_grid[i, j]) * np.sin(theta_grid[i, j]) + y0
-                z[i, j] = rho * np.cos(phi_grid[i, j]) + z0
-            else:
-                # Assign NaN values to points with no signal
-                x[i, j] = np.nan
-                y[i, j] = np.nan
-                z[i, j] = np.nan
-
-    # Stack the coordinates to create the points array
-    points = np.stack([x.flatten(), y.flatten(), z.flatten()], axis=1)
-
-    # Remove NaN values from the points array (points with no signal)
-    points = points[~np.isnan(points).any(axis=1)]
-
-
-    # Create the pyvista PolyData object (surface)
-    cloud = pv.PolyData(points)
-
-    # Option 1: Create a surface using a Delaunay 2D filter (better for non-uniform data)
-    surface = cloud.delaunay_2d()
-
-    # Option 2: Create a structured grid (requires regular spacing and is less flexible).
-    # Ensure points are organized into a regular grid for this to work. Requires a complete surface, with no NaN points.
-    #structured_grid = pv.StructuredGrid(x, y, z) #This will error if you have NaN values
-
-
-    return surface
-
-
 def export_signal_points(signal_starts, origin, theta_res, phi_res, orig_vol_shape, phi_max):
     """
     Exports the 3D coordinates of detected signals (in ZYX order) to a CSV file.
@@ -322,7 +290,7 @@ def export_signal_points(signal_starts, origin, theta_res, phi_res, orig_vol_sha
     return np.array(points)
 
 
-def add_projected_embryo_outline_points(volume_shape, points) -> np.ndarray:
+def add_projected_embryo_outline_points(volume_shape_zyx, points) -> np.ndarray:
     """    
     Adds projected embryo outline points to the given set of points.    
     The function takes the volume shape and a set of points, and creates a new set of points by projecting the points with a z-coordinate greater than 80% of the maximum z-coordinate onto the maximum z-plane. These projected points are then concatenated to the original set of points.
@@ -334,7 +302,7 @@ def add_projected_embryo_outline_points(volume_shape, points) -> np.ndarray:
     Returns:
         numpy.ndarray: The updated set of points with the projected points added.
     """        
-    max_z = volume_shape[0] - 1
+    max_z = volume_shape_zyx[0] - 1
     p_proj = points.copy()
     p_proj = p_proj[p_proj[:,0] > max_z * 0.8]
     p_proj[:,0] = max_z
@@ -356,51 +324,59 @@ def save_points_to_csv(points, output_file):
     print(f"Exported {points.shape[0]} signal points to {output_file}")
 
 
-
-def find_background_std(volume):
+def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=3) -> Volume:
     """
-    Find the standard deviation of the background in a 3D volume from a 50x50x50 corner cube.
+    Converts a set of 3D points to a binary volume mask of the inner part of the embryo using a convex hull.
+
+    This function takes a set of 3D points and a volume shape, constructs a convex hull from the points,
+    binarizes the convex hull into a volume mask, and then dilates the mask. 
+
+    Args:
+        points (numpy.ndarray): A numpy array of shape (N, 3) representing the 3D points in ZYX order.
+        volume_shape_zyx (tuple): A tuple (z, y, x) representing the shape of the volume.
+        dilation_radius (int): The radius of the dilation applied to the volume mask.  This expands the mask
+            outwards, useful for ensuring complete coverage of the structure represented by the points.
+
+    Returns:
+        vedo.Volume: A vedo.Volume object representing the binary volume mask.  The mask has values of 255 inside
+            the dilated convex hull and 0 outside.
     """
-    # Calculate full image min and max
-    vmin = volume.min()
-    vmax = volume.max()
-    full_range = vmax - vmin
-    # Background threshold: values must not exceed 20% above the minimum
-    threshold = vmin + 0.2 * full_range
+    points_raw = points[:, [2, 1, 0]]
+    pts = Points(points_raw)
+    hull = ConvexHull(pts).alpha(0.2)
 
-    cube_found = None
-    # Define the eight corners (z, y, x) for a 50x50x50 cube.
-    corners = [
-        (0, 0, 0),
-        (0, 0, volume.shape[2] - 50),
-        (0, volume.shape[1] - 50, 0),
-        (0, volume.shape[1] - 50, volume.shape[2] - 50),
-        (volume.shape[0] - 50, 0, 0),
-        (volume.shape[0] - 50, 0, volume.shape[2] - 50),
-        (volume.shape[0] - 50, volume.shape[1] - 50, 0),
-        (volume.shape[0] - 50, volume.shape[1] - 50, volume.shape[2] - 50)
-    ]
+    vol_shape_xyz = volume_shape_zyx[::-1]
+    vol_mask = hull.binarize(values=(255,0),dims=vol_shape_xyz,spacing=[1,1,1], origin=(0,0,0))
+    dilated = vol_mask.clone().dilate(neighbours=(dilation_radius,dilation_radius,dilation_radius))
+    return dilated
 
-    for corner in corners:
-        z, y, x = corner
-        cube = volume[z:z+50, y:y+50, x:x+50]
-        # Check if no voxel in cube exceeds the threshold.
-        if cube.max() <= threshold:
-            cube_found = cube
-            break
+def substract_mask_from_embryo_volume(volume_zyx: np.ndarray, mask_xyz: Volume) -> np.ndarray:
+    """
+    Subtracts a mask from an embryo volume.
 
-    if cube_found is None:
-        cube_found = volume[0:50, 0:50, 0:50]
-        print("Warning: Could not find a background cube with values below threshold; using default first corner.")
+    This function takes a 3D numpy array representing the embryo volume and a vedo.Volume object representing the mask.
+    It transposes the volume to XYZ order, converts it to a vedo.Volume, thresholds the mask to create a binary mask,
+    and then performs an element-wise multiplication of the embryo volume with the mask. Finally, it transposes the
+    result back to ZYX order.
 
-    bkg_std = np.std(cube_found)
-    print(f"Background standard deviation: {bkg_std}")
-    return bkg_std
+    Args:
+        volume_zyx (numpy.ndarray): A 3D numpy array representing the embryo volume in ZYX order.
+        mask (vedo.Volume): A vedo.Volume object representing the mask in XYZ order.
+
+    Returns:
+        numpy.ndarray: A 3D numpy array representing the embryo volume with the mask applied, in ZYX order.
+    """
+    data_matrix = np.transpose(volume_zyx, (2, 1, 0))
+    embryo = Volume(data_matrix)
+    mask_xyz = mask_xyz.threshold(above=1, replace_value=1)
+    mask_xyz = mask_xyz.threshold(below=254, replace_value=0)
+    diff = embryo.clone().operation("*",mask_xyz)
+    return np.transpose(diff.tonumpy(), (2, 1, 0))
 
 if __name__ == "__main__":
     file_path = "outs/down_cropped.tif"
-    volume = load_3d_volume(file_path)
-    volume = volume[::-1, :, :]
+    volume_orig = load_3d_volume(file_path)
+    volume = volume_orig[::-1, :, :]
 
     if volume is not None:
         # Crop the volume
@@ -423,6 +399,15 @@ if __name__ == "__main__":
         points = export_signal_points(filtered_signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
         points = add_projected_embryo_outline_points(volume.shape, points)
         save_points_to_csv(points, "outs/surface_points.csv")
+
+        # Create a volume mask from the points
+        mask = points_to_convex_hull_volume_mask(points, volume.shape, dilation_radius=3)
+        mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
+        np.save("outs/down_cropped_hull_mask.npy", mask_np)
+
+        # Subtract the mask from the embryo volume
+        peeled_volume = substract_mask_from_embryo_volume(volume_orig, mask)
+        np.save("outs/down_cropped_minus_hull.npy", peeled_volume)
 
         print("Original volume shape:", volume.shape)
         print("Polar volume shape:", polar_volume.shape)

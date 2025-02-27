@@ -1,7 +1,7 @@
 import numpy as np
 import tifffile
 import os
-from vedo import Plotter, Points, Mesh, Text2D, ConvexHull, Volume
+from vedo import Plotter, Points, ConvexHull, Volume
 
 def load_3d_volume(file_path):
     """
