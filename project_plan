@@ -19,7 +19,7 @@ Input data: half of the embryo imaged with 2 merged illuminations, assuming that
   erode mask by several layers ->
   delete mask from downsampled (full res later) cropped transformed volume -> save 3D tiff and max proj of peeled.
   convert mesh coords back to orignal raw image (later)
-- Do simple cylindrical max projection from 3D peeled volume
++ Do simple cylindrical max projection from 3D peeled volume
 
 Ongoing problems and questions:
 x A lot of erroneours detections inside the embryo. But convex hull gives prety good estimate nonetheless.

@@ -1,5 +1,7 @@
 import numpy as np
 from scipy.interpolate import interpn
+import scalene
+import scalene.profile
 
 
 def cylindrical_cartography_projection(volume, origin, num_r=None, num_theta=None, num_z=None):
@@ -18,7 +20,7 @@ def cylindrical_cartography_projection(volume, origin, num_r=None, num_theta=Non
         num_r (int, optional): Number of radial samples. If None, defaults to int(orig_img_y_max/2).
         num_theta (int, optional): Number of angular (theta) samples. If None, defaults to int(np.pi * max_r),
                                    i.e. the half-circumference of a circle with radius max_r.
-        num_z (int, optional): Number of samples along the cylinder’s z axis (parallel to original X).
+        num_z (int, optional): Number of samples along the cylinder's z axis (parallel to original X).
                                If None, defaults to the number of x slices in volume.
     
     Returns:
@@ -93,5 +95,7 @@ if __name__ == "__main__":
     origin_x = volume.shape[2] // 2  # Middle of X
     origin = (origin_z, origin_y, origin_x)
 
-    projection = cylindrical_cartography_projection(volume, origin)
+    with scalene.profile.Scalene():
+        projection = cylindrical_cartography_projection(volume, origin)
+    np.save("outs/cylindrical_projection.npy", projection)
     np.save("outs/cylindrical_projection.npy", projection)
