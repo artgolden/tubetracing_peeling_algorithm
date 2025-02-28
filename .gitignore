@@ -1,3 +1,4 @@
 *.tif
 *.png
-profile.*
+.profiles
+profile.

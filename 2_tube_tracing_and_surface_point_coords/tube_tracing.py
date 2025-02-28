@@ -350,6 +350,7 @@ def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=
     dilated = vol_mask.clone().dilate(neighbours=(dilation_radius,dilation_radius,dilation_radius))
     return dilated
 
+
 def substract_mask_from_embryo_volume(volume_zyx: np.ndarray, mask_xyz: Volume) -> np.ndarray:
     """
     Subtracts a mask from an embryo volume.
@@ -372,6 +373,85 @@ def substract_mask_from_embryo_volume(volume_zyx: np.ndarray, mask_xyz: Volume) 
     mask_xyz = mask_xyz.threshold(below=254, replace_value=0)
     diff = embryo.clone().operation("*",mask_xyz)
     return np.transpose(diff.tonumpy(), (2, 1, 0))
+
+
+def cylindrical_cartography_projection(volume, origin, num_r=None, num_theta=360, num_z=None):
+    """
+    Converts the embryo volume to cylindrical coordinates with the cylinder axis
+    parallel to the original image's X axis. The cylindrical coordinate system is centered at
+    the given origin. Linear interpolation is used to sample the volume onto the cylindrical grid.
+    Then, a maximum intensity projection along the radial (r) axis (within a cylinder of maximum 
+    r = orig_img_y_max/2) is computed, resulting in a 2D cartography projection.
+    
+    Args:
+        volume (numpy.ndarray): 3D volume in Z, Y, X order.
+        origin (tuple): A tuple (origin_z, origin_y, origin_x) representing the center of the cylindrical
+                        coordinate system.
+        num_r (int, optional): Number of radial samples. If None, defaults to int(orig_img_y_max/2).
+        num_theta (int, optional): Number of angular (theta) samples. Default is 360.
+        num_z (int, optional): Number of samples along the cylinder’s z axis (parallel to original X).
+                               If None, defaults to the number of x slices in volume.
+    
+    Returns:
+        numpy.ndarray: A 2D numpy array (theta x z) corresponding to the maximum intensity projection
+                       along the radial direction.
+    """
+    # Unpack the origin
+    origin_z, origin_y, origin_x = origin
+
+    # Determine the maximum radius as half the size of the original y-dimension.
+    orig_img_y_max = volume.shape[1]
+    max_r = orig_img_y_max / 2.0
+
+    # Set default sampling resolutions if not provided.
+    if num_r is None:
+        num_r = int(max_r)  # one sample per pixel (approximately)
+    if num_z is None:
+        num_z = volume.shape[2]
+    
+    # Define the cylindrical grid:
+    # r: from 0 to max_r
+    r_vals = np.linspace(0, max_r, num_r)
+    # theta: from 0 to 2*pi (without repeating the endpoint)
+    theta_vals = np.linspace(0, 2 * np.pi, num_theta, endpoint=False)
+    # z: along the cylinder axis (which is the original X axis, shifted by origin_x)
+    # Here we define the new z coordinate to range from -origin_x to (x_max - origin_x)
+    z_vals = np.linspace(-origin_x, volume.shape[2] - 1 - origin_x, num_z)
+    
+    # Create a 3D meshgrid in cylindrical coordinates.
+    # The ordering will be (theta, z, r) so that after sampling we have a grid
+    # over which we can take a maximum over r.
+    theta_grid, z_grid, r_grid = np.meshgrid(theta_vals, z_vals, r_vals, indexing="ij")
+    
+    # Map cylindrical (r, theta, z) back to original Cartesian coordinates.
+    # Note that the cylinder’s axis (z in cylindrical coordinates) corresponds to the original X axis.
+    # The radial plane is the (y,z) plane of the original image, with the origin at (origin_y, origin_z).
+    #
+    # Using the standard mapping:
+    #    original_y = origin_y + r * cos(theta)
+    #    original_z = origin_z + r * sin(theta)
+    #    original_x = z + origin_x   (since z here is the offset along original X)
+    orig_z = origin_z + r_grid * np.sin(theta_grid)
+    orig_y = origin_y + r_grid * np.cos(theta_grid)
+    orig_x = z_grid + origin_x  # recovering the original x coordinate
+    
+    # Prepare points for interpolation. The volume is in (Z, Y, X) order.
+    xi = np.stack((orig_z, orig_y, orig_x), axis=-1)
+    
+    # Define the grid for the original volume.
+    grid_z = np.arange(volume.shape[0])
+    grid_y = np.arange(volume.shape[1])
+    grid_x = np.arange(volume.shape[2])
+    points = (grid_z, grid_y, grid_x)
+    
+    # Interpolate using linear interpolation.
+    cylindrical_volume = interpn(points, volume, xi, method="linear", bounds_error=False, fill_value=0)
+    
+    # Compute the maximum intensity projection along the radial (r) axis.
+    projection = np.max(cylindrical_volume, axis=2)
+    
+    return projection
+
 
 if __name__ == "__main__":
     file_path = "outs/down_cropped.tif"

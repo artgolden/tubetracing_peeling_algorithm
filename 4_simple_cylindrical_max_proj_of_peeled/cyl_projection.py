@@ -1,9 +1,10 @@
 import numpy as np
 from scipy.interpolate import interpn
-import scalene
-import scalene.profile
+# import scalene
+# import scalene.profile
+from line_profiler import profile
 
-
+@profile
 def cylindrical_cartography_projection(volume, origin, num_r=None, num_theta=None, num_z=None):
     """
     Converts the embryo volume to cylindrical coordinates with the cylinder axis
@@ -95,7 +96,7 @@ if __name__ == "__main__":
     origin_x = volume.shape[2] // 2  # Middle of X
     origin = (origin_z, origin_y, origin_x)
 
-    with scalene.profile.Scalene():
-        projection = cylindrical_cartography_projection(volume, origin)
+    # with scalene.profile.Scalene():
+    projection = cylindrical_cartography_projection(volume, origin)
     np.save("outs/cylindrical_projection.npy", projection)
     np.save("outs/cylindrical_projection.npy", projection)
