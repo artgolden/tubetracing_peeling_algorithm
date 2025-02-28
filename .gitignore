@@ -2,3 +2,4 @@
 *.png
 .profiles
 profile.
+.vscode

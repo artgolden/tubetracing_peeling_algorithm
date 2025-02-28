@@ -1,10 +1,11 @@
 import tifffile
 import os
 import numpy as np
-from scipy.interpolate import interpn
-import scipy.ndimage as ndimage
-from vedo import Plotter, Points, ConvexHull, Volume
-
+from vedo import Points, ConvexHull, Volume
+from dexp.utils import xpArray
+from dexp.utils.backends import Backend, BestBackend, NumpyBackend
+import importlib
+from scipy import ndimage as cpu_ndimage
 
 def load_3d_volume(file_path):
     """
@@ -34,8 +35,7 @@ def load_3d_volume(file_path):
         print(f"Error loading TIFF file: {e}")
         return None
 
-
-def cartesian_to_polar(volume, origin, rho_res=1, theta_res=360, phi_res=180, phi_max=np.pi / 2):
+def cartesian_to_polar(volume: xpArray, origin, rho_res=1, theta_res=360, phi_res=180, phi_max=np.pi / 2) -> xpArray:
     """
     Converts a 3D numpy array from Cartesian coordinates to polar coordinates,
     with the origin of the polar coordinates at the specified point, and interpolates
@@ -43,7 +43,7 @@ def cartesian_to_polar(volume, origin, rho_res=1, theta_res=360, phi_res=180, ph
     Assumes the input volume array has axes in the following order: Z, Y, X.
 
     Args:
-        volume (numpy.ndarray): A 3D numpy array representing the volume in Cartesian coordinates (Z, Y, X).
+        volume (xpArray): A 3D numpy array representing the volume in Cartesian coordinates (Z, Y, X).
         origin (tuple): A tuple (z0, y0, x0) representing the origin of the polar coordinate system
                         within the volume.
         rho_res (int): Number of samples along radial direction.
@@ -51,9 +51,14 @@ def cartesian_to_polar(volume, origin, rho_res=1, theta_res=360, phi_res=180, ph
         phi_res (int): Number of samples along polar direction.
 
     Returns:
-        numpy.ndarray: A 3D numpy array representing the volume in polar coordinates (rho, theta, phi)
+        xpArray: A 3D numpy array representing the volume in polar coordinates (rho, theta, phi)
                        with interpolated values from the original volume.
     """
+    xp = Backend.get_xp_module()
+    sp = Backend.get_sp_module()
+    interpolate = importlib.import_module(".interpolate", sp.__name__) # Had to use a workaround, since sp.interpolate gives an error: 
+                                                                       # module 'cupyx.scipy' has no attribute 'interpolate' when backend is CuPy
+    volume = Backend.to_backend(volume)
     z0, y0, x0 = origin
 
     # Define the polar grid
@@ -62,36 +67,38 @@ def cartesian_to_polar(volume, origin, rho_res=1, theta_res=360, phi_res=180, ph
         + max(y0, volume.shape[1] - y0) ** 2
         + max(x0, volume.shape[2] - x0) ** 2
     )
-    rho = np.linspace(0, max_dist, round(max_dist))
-    theta = np.linspace(0, 2 * np.pi, theta_res)
-    phi = np.linspace(0, phi_max, phi_res) # np.pi / 2 default: taking only positive Z values, since we assume only half of the embryo inside the image and origing with Z=0 or max Z value
+    rho = xp.linspace(0, max_dist, round(max_dist))
+    theta = xp.linspace(0, 2 * xp.pi, theta_res)
+    phi = xp.linspace(0, phi_max, phi_res) # xp.pi / 2 default: taking only positive Z values, since we assume only half of the embryo inside the image and origing with Z=0 or max Z value
 
-    theta_grid, phi_grid, rho_grid = np.meshgrid(theta, phi, rho, indexing="ij")
+    theta_grid, phi_grid, rho_grid = xp.meshgrid(theta, phi, rho, indexing="ij")
 
     # Convert polar coordinates back to Cartesian coordinates
-    x = rho_grid * np.sin(phi_grid) * np.cos(theta_grid) + x0
-    y = rho_grid * np.sin(phi_grid) * np.sin(theta_grid) + y0
-    z = rho_grid * np.cos(phi_grid) + z0
+    x = rho_grid * xp.sin(phi_grid) * xp.cos(theta_grid) + x0
+    y = rho_grid * xp.sin(phi_grid) * xp.sin(theta_grid) + y0
+    z = rho_grid * xp.cos(phi_grid) + z0
 
     # Interpolate the original volume onto the polar grid
     points = (
-        np.arange(volume.shape[0]),
-        np.arange(volume.shape[1]),
-        np.arange(volume.shape[2]),
+        xp.arange(volume.shape[0]),
+        xp.arange(volume.shape[1]),
+        xp.arange(volume.shape[2]),
     )  # Z, Y, X
-    xi = np.stack((z, y, x), axis=-1)  # Stack z,y,x to create interpolation points
+    xi = xp.stack((z, y, x), axis=-1)  # Stack z,y,x to create interpolation points
 
-    polar_volume = interpn(
+    polar_volume = interpolate.interpn(
         points, volume, xi, method="linear", bounds_error=False, fill_value=0
     )
 
     return polar_volume
 
-
-def find_background_std(volume):
+def find_background_std(volume: xpArray) -> float:
     """
     Find the standard deviation of the background in a 3D volume from a 50x50x50 corner cube.
     """
+    xp = Backend.get_xp_module()
+    sp = Backend.get_sp_module()
+    volume = Backend.to_backend(volume)
     # Calculate full image min and max
     vmin = volume.min()
     vmax = volume.max()
@@ -122,18 +129,17 @@ def find_background_std(volume):
 
     if cube_found is None:
         cube_found = volume[0:50, 0:50, 0:50]
-        print("Warning: Could not find a background cube with values below threshold; using default first corner.")
+        print(f"Warning: Could not find a background cube with values below threshold; using default first corner. Volume min: {vmin}, max: {vmax}")
 
-    bkg_std = np.std(cube_found)
+    bkg_std = float(xp.std(cube_found))
     print(f"Background standard deviation: {bkg_std}")
     return bkg_std
 
-
 def detect_signal_start(intensity, bkg_std, smoothing_window=4, threshold_factor=2.5):
-    intensity = intensity.copy()
     intensity = np.trim_zeros(intensity, trim='b')
+    
     # Smooth the intensity values to reduce noise
-    smoothed_intensity = ndimage.uniform_filter1d(intensity, size=smoothing_window)
+    smoothed_intensity = cpu_ndimage.uniform_filter1d(intensity, size=smoothing_window)
 
     # Calculate the first derivative
     derivative = np.diff(smoothed_intensity)
@@ -149,7 +155,6 @@ def detect_signal_start(intensity, bkg_std, smoothing_window=4, threshold_factor
     else:
         return signal_start_index[0]
 
-
 def raytracing_in_polar(polar_volume, bkg_std, patch_size=1):
     """
     Performs ray tracing in the polar volume to detect the start of a signal along each ray.
@@ -158,7 +163,7 @@ def raytracing_in_polar(polar_volume, bkg_std, patch_size=1):
     averages them, and then determines the signal start.
 
     Args:
-        polar_volume (numpy.ndarray): A 3D numpy array representing the volume in polar coordinates
+        polar_volume : A 3D numpy array representing the volume in polar coordinates
                                       (theta, phi, rho).
         bkg_std (float): The standard deviation of the background noise.
         patch_size (int): The radius of the patch to average in theta and phi dimensions.
@@ -168,6 +173,7 @@ def raytracing_in_polar(polar_volume, bkg_std, patch_size=1):
         numpy.ndarray: A 2D numpy array with dimensions (theta, phi) containing the rho index where
                        the signal starts. Returns -1 if no signal is detected along a given ray.
     """
+
     theta_res, phi_res, rho_res = polar_volume.shape
     signal_starts = np.zeros((theta_res, phi_res))
 
@@ -245,7 +251,6 @@ def filter_high_rho_outliers(signal_starts, threshold_factor=1.2, min_neighbors=
 
     return filtered_signal_starts
 
-
 def export_signal_points(signal_starts, origin, theta_res, phi_res, orig_vol_shape, phi_max):
     """
     Exports the 3D coordinates of detected signals (in ZYX order) to a CSV file.
@@ -289,7 +294,6 @@ def export_signal_points(signal_starts, origin, theta_res, phi_res, orig_vol_sha
 
     return np.array(points)
 
-
 def add_projected_embryo_outline_points(volume_shape_zyx, points) -> np.ndarray:
     """    
     Adds projected embryo outline points to the given set of points.    
@@ -309,8 +313,6 @@ def add_projected_embryo_outline_points(volume_shape_zyx, points) -> np.ndarray:
     more_points = np.concatenate((points, p_proj))
     return more_points
 
-
-
 def save_points_to_csv(points, output_file):
     """
     Save the given points to a CSV file.
@@ -322,7 +324,6 @@ def save_points_to_csv(points, output_file):
     np.savetxt(output_file, points, delimiter=",", header="z,y,x", comments="", fmt='%.3f')
 
     print(f"Exported {points.shape[0]} signal points to {output_file}")
-
 
 def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=3) -> Volume:
     """
@@ -350,7 +351,6 @@ def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=
     dilated = vol_mask.clone().dilate(neighbours=(dilation_radius,dilation_radius,dilation_radius))
     return dilated
 
-
 def substract_mask_from_embryo_volume(volume_zyx: np.ndarray, mask_xyz: Volume) -> np.ndarray:
     """
     Subtracts a mask from an embryo volume.
@@ -374,29 +374,32 @@ def substract_mask_from_embryo_volume(volume_zyx: np.ndarray, mask_xyz: Volume) 
     diff = embryo.clone().operation("*",mask_xyz)
     return np.transpose(diff.tonumpy(), (2, 1, 0))
 
-
-def cylindrical_cartography_projection(volume, origin, num_r=None, num_theta=360, num_z=None):
+def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, int], num_r=None, num_theta=None, num_z=None) -> np.ndarray:
     """
     Converts the embryo volume to cylindrical coordinates with the cylinder axis
     parallel to the original image's X axis. The cylindrical coordinate system is centered at
     the given origin. Linear interpolation is used to sample the volume onto the cylindrical grid.
-    Then, a maximum intensity projection along the radial (r) axis (within a cylinder of maximum 
-    r = orig_img_y_max/2) is computed, resulting in a 2D cartography projection.
+    Then, a maximum intensity projection along the radial (r) axis is computed, resulting in a 2D cartography projection.
+    
+    The cylindrical volume is arranged with the radial coordinate as the 0th axis.
     
     Args:
-        volume (numpy.ndarray): 3D volume in Z, Y, X order.
-        origin (tuple): A tuple (origin_z, origin_y, origin_x) representing the center of the cylindrical
-                        coordinate system.
+        volume (array): 3D volume (backend array) in Z, Y, X order.
+        origin (tuple): A tuple (origin_z, origin_y, origin_x) representing the center of the cylindrical coordinate system.
         num_r (int, optional): Number of radial samples. If None, defaults to int(orig_img_y_max/2).
-        num_theta (int, optional): Number of angular (theta) samples. Default is 360.
-        num_z (int, optional): Number of samples along the cylinder’s z axis (parallel to original X).
+        num_theta (int, optional): Number of angular (theta) samples. If None, defaults to int(np.pi * max_r).
+        num_z (int, optional): Number of samples along the cylinder's z axis (parallel to original X).
                                If None, defaults to the number of x slices in volume.
     
     Returns:
-        numpy.ndarray: A 2D numpy array (theta x z) corresponding to the maximum intensity projection
-                       along the radial direction.
+        array: A 2D array (theta x z) corresponding to the maximum intensity projection along the radial direction.
     """
-    # Unpack the origin
+    xp = Backend.get_xp_module()
+    sp = Backend.get_sp_module()
+    interpolate = importlib.import_module(".interpolate", sp.__name__) # Had to use a workaround, since sp.interpolate gives an error: 
+                                                                       # module 'cupyx.scipy' has no attribute 'interpolate' when backend is CuPy
+    volume = Backend.to_backend(volume)
+
     origin_z, origin_y, origin_x = origin
 
     # Determine the maximum radius as half the size of the original y-dimension.
@@ -405,60 +408,55 @@ def cylindrical_cartography_projection(volume, origin, num_r=None, num_theta=360
 
     # Set default sampling resolutions if not provided.
     if num_r is None:
-        num_r = int(max_r)  # one sample per pixel (approximately)
+        num_r = int(max_r)  # approximately one sample per pixel
+    if num_theta is None:
+        num_theta = int(xp.pi * max_r)  # based on the half-circumference
     if num_z is None:
         num_z = volume.shape[2]
     
-    # Define the cylindrical grid:
-    # r: from 0 to max_r
-    r_vals = np.linspace(0, max_r, num_r)
-    # theta: from 0 to 2*pi (without repeating the endpoint)
-    theta_vals = np.linspace(0, 2 * np.pi, num_theta, endpoint=False)
-    # z: along the cylinder axis (which is the original X axis, shifted by origin_x)
-    # Here we define the new z coordinate to range from -origin_x to (x_max - origin_x)
-    z_vals = np.linspace(-origin_x, volume.shape[2] - 1 - origin_x, num_z)
+    # Define the cylindrical grid.
+    r_vals = xp.linspace(0, max_r, num_r)
+    theta_vals = xp.linspace(0, xp.pi, num_theta, endpoint=False)
+    z_vals = xp.linspace(-origin_x, volume.shape[2] - 1 - origin_x, num_z)
     
-    # Create a 3D meshgrid in cylindrical coordinates.
-    # The ordering will be (theta, z, r) so that after sampling we have a grid
-    # over which we can take a maximum over r.
-    theta_grid, z_grid, r_grid = np.meshgrid(theta_vals, z_vals, r_vals, indexing="ij")
+    # Create a 3D meshgrid in cylindrical coordinates (r, theta, z).
+    r_grid, theta_grid, z_grid = xp.meshgrid(r_vals, theta_vals, z_vals, indexing="ij")
     
     # Map cylindrical (r, theta, z) back to original Cartesian coordinates.
-    # Note that the cylinder’s axis (z in cylindrical coordinates) corresponds to the original X axis.
-    # The radial plane is the (y,z) plane of the original image, with the origin at (origin_y, origin_z).
-    #
-    # Using the standard mapping:
-    #    original_y = origin_y + r * cos(theta)
-    #    original_z = origin_z + r * sin(theta)
-    #    original_x = z + origin_x   (since z here is the offset along original X)
-    orig_z = origin_z + r_grid * np.sin(theta_grid)
-    orig_y = origin_y + r_grid * np.cos(theta_grid)
-    orig_x = z_grid + origin_x  # recovering the original x coordinate
+    orig_y = origin_y + r_grid * xp.cos(theta_grid)
+    orig_z = origin_z + r_grid * xp.sin(theta_grid)
+    orig_x = z_grid + origin_x  # recover the original x coordinate
     
-    # Prepare points for interpolation. The volume is in (Z, Y, X) order.
-    xi = np.stack((orig_z, orig_y, orig_x), axis=-1)
+    # Prepare points for interpolation (volume is in Z, Y, X order).
+    xi = xp.stack((orig_z, orig_y, orig_x), axis=-1)
     
     # Define the grid for the original volume.
-    grid_z = np.arange(volume.shape[0])
-    grid_y = np.arange(volume.shape[1])
-    grid_x = np.arange(volume.shape[2])
+    grid_z = xp.arange(volume.shape[0])
+    grid_y = xp.arange(volume.shape[1])
+    grid_x = xp.arange(volume.shape[2])
     points = (grid_z, grid_y, grid_x)
     
     # Interpolate using linear interpolation.
-    cylindrical_volume = interpn(points, volume, xi, method="linear", bounds_error=False, fill_value=0)
+    cylindrical_volume = interpolate.interpn(points, volume, xi, method="linear", bounds_error=False, fill_value=0)
+    print("Cylindrical volume shape:", cylindrical_volume.shape)
     
     # Compute the maximum intensity projection along the radial (r) axis.
-    projection = np.max(cylindrical_volume, axis=2)
+    projection = xp.max(cylindrical_volume, axis=0)
+    print("Projection shape:", projection.shape)
     
     return projection
-
 
 if __name__ == "__main__":
     file_path = "outs/down_cropped.tif"
     volume_orig = load_3d_volume(file_path)
-    volume = volume_orig[::-1, :, :]
+    if volume_orig is None:
+        print("Error loading the volume.")
+        exit(1)
 
-    if volume is not None:
+    with BestBackend():
+        volume = Backend.to_backend(volume_orig)
+        volume = volume[::-1, :, :]
+
         origin_z = 0
         origin_y = volume.shape[1] // 2  # Middle of Y
         origin_x = volume.shape[2] // 2  # Middle of X
@@ -469,7 +467,7 @@ if __name__ == "__main__":
 
         # Tubetracing, get surface point cloud
         polar_volume = cartesian_to_polar(volume, origin, phi_max = phi_max)
-        signals = raytracing_in_polar(polar_volume, bkg_std)
+        signals = raytracing_in_polar(Backend.to_numpy(polar_volume), bkg_std)
         filtered_signals = filter_high_rho_outliers(signals)
         points = export_signal_points(filtered_signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
         points = add_projected_embryo_outline_points(volume.shape, points)
@@ -484,7 +482,11 @@ if __name__ == "__main__":
         peeled_volume = substract_mask_from_embryo_volume(volume_orig, mask)
         np.save("outs/down_cropped_minus_hull.npy", peeled_volume)
 
+        # Do a cylindrical cartography projection of the peeled volume
+        peeled_volume = Backend.to_backend(peeled_volume)[::-1, :, :]
+        cylindrical_projection = cylindrical_cartography_projection(peeled_volume, origin)
+        projection_cpu = Backend.to_numpy(cylindrical_projection)
+        np.save("outs/cylindrical_projection.npy", projection_cpu)
+
         print("Original volume shape:", volume.shape)
         print("Polar volume shape:", polar_volume.shape)
-    else:
-        print("Failed to load the volume.")

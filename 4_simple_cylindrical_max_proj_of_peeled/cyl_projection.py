@@ -99,4 +99,3 @@ if __name__ == "__main__":
     # with scalene.profile.Scalene():
     projection = cylindrical_cartography_projection(volume, origin)
     np.save("outs/cylindrical_projection.npy", projection)
-    np.save("outs/cylindrical_projection.npy", projection)
