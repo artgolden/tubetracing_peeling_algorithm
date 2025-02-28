@@ -74,13 +74,13 @@ def read_points_from_csv(filepath):
         print(f"An unexpected error occurred: {e}")
         return None
 
-points_raw = read_points_from_csv("outs/surface_points.csv")
+points_raw = read_points_from_csv("../outs/surface_points.csv")
 points_raw = points_raw[:, [2, 1, 0]]
 points = Points(points_raw)
 points = points.subsample(0.005)
 print("points", points.bounds())
 
-data_matrix = load_3d_volume("outs/down_cropped.tif")
+data_matrix = load_3d_volume("../outs/down_cropped.tif")
 print("data_matrix", data_matrix.shape)
 data_matrix = np.transpose(data_matrix, (2, 1, 0))
 print("data_matrix", data_matrix.shape)
@@ -115,6 +115,6 @@ plt.at(3).show("..the volume is isosurfaced:", iso)
 diff = embryo.clone().operation("*",eroded)
 plt.at(4).show(diff)
 
-np.save("outs/down_cropped_minus_hull.npy", np.transpose(diff.tonumpy(), (2, 1, 0)))
+np.save("../outs/down_cropped_minus_hull.npy", np.transpose(diff.tonumpy(), (2, 1, 0)))
 
 plt.interactive().close()

@@ -459,20 +459,15 @@ if __name__ == "__main__":
     volume = volume_orig[::-1, :, :]
 
     if volume is not None:
-        # Crop the volume
-        # cropped_volume = volume[:10, :20, :20]
-
-        # Define the origin
         origin_z = 0
         origin_y = volume.shape[1] // 2  # Middle of Y
         origin_x = volume.shape[2] // 2  # Middle of X
         origin = (origin_z, origin_y, origin_x)
         phi_max = np.pi / 2
 
-        # Find the background standard deviation
         bkg_std = find_background_std(volume)
 
-        # Convert to polar coordinates
+        # Tubetracing, get surface point cloud
         polar_volume = cartesian_to_polar(volume, origin, phi_max = phi_max)
         signals = raytracing_in_polar(polar_volume, bkg_std)
         filtered_signals = filter_high_rho_outliers(signals)
@@ -491,6 +486,5 @@ if __name__ == "__main__":
 
         print("Original volume shape:", volume.shape)
         print("Polar volume shape:", polar_volume.shape)
-        # print("Polar volume:", polar_volume)
     else:
         print("Failed to load the volume.")

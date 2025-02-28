@@ -2,7 +2,7 @@ import numpy as np
 import tifffile
 import os
 from vedo import dataurl, Volume, Text2D
-from vedo.applications import IsosurfaceBrowser
+from vedo.applications import RayCastPlotter
 
 def load_3d_volume(file_path):
     """
@@ -32,13 +32,13 @@ def load_3d_volume(file_path):
         print(f"Error loading TIFF file: {e}")
         return None
 
-data_matrix = load_3d_volume("outs/down_cropped.tif")
+data_matrix = load_3d_volume("../outs/down_cropped.tif")
 
-vol = Volume(data_matrix)
-# vol.cmap(['white','b','g','r']).mode(1)
-# vol.add_scalarbar()
+embryo = Volume(data_matrix)
 
-# IsosurfaceBrowser(Plotter) instance:
-plt = IsosurfaceBrowser(vol, use_gpu=True, c='gold')
+embryo.mode(1).cmap("jet")  # change visual properties
 
-plt.show(axes=7, bg2='lb').close()
+# Create a Plotter instance and show
+plt = RayCastPlotter(embryo, bg='black', bg2='blackboard', axes=7)
+plt.show(viewup="z")
+plt.close()

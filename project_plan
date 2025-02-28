@@ -26,6 +26,8 @@ x A lot of erroneours detections inside the embryo. But convex hull gives prety 
 - Try 3d median filter for better detection?
 x Or some other form of 3d denoising?
 x there are lots of detections around the origin of the polar coords, why is that? = Looks like it was because of the rays pointing away from the image volume, limiting Phi to 0:Pi/2 solved it.
+- Add cylindrical_cartography_projection to main script
+
 
 Current TODO:
 + Add embryo projection outline as a countour of points at Z=max for the convexHull to be extending to volume border.
@@ -33,6 +35,7 @@ Current TODO:
 + Export binarized substraction mask as a file and the substraction volume center point such that later it can be used for the plugin of manual surface substraction correction.
 
 For later:
+- Add finding the z of embry central axis by fitting a circle to X projection
 - Find parameter value for alpha shapes that are good for bean shaped embryos instead of convexHull
 - Write a Napari plugin that allows to manually correct the substraction mask by clicking on the cartography projection, and thus adding or sustracting from the surface of the substraction mask volume at a correspoinding location. It will probably be convenient to have substraction mask be in cylindrical coordinates same as the cartography projection.
 - Check whether transposes from ZYX to XYZ are necessary for the vedo library.

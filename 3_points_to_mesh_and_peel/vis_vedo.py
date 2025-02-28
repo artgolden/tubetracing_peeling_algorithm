@@ -2,7 +2,7 @@ import numpy as np
 import tifffile
 import os
 from vedo import dataurl, Volume, Text2D
-from vedo.applications import RayCastPlotter
+from vedo.applications import Slicer3DPlotter
 
 def load_3d_volume(file_path):
     """
@@ -32,13 +32,22 @@ def load_3d_volume(file_path):
         print(f"Error loading TIFF file: {e}")
         return None
 
-data_matrix = load_3d_volume("outs/down_cropped.tif")
+data_matrix = load_3d_volume("../outs/down_cropped.tif")
 
-embryo = Volume(data_matrix)
+vol = Volume(data_matrix)
+# vol.cmap(['white','b','g','r']).mode(1)
+# vol.add_scalarbar()
 
-embryo.mode(1).cmap("jet")  # change visual properties
+plt = Slicer3DPlotter(
+    vol,
+    cmaps=("gist_ncar_r", "jet", "Spectral_r", "hot_r", "bone_r"),
+    use_slider3d=False,
+    bg="white",
+    bg2="blue9",
+)
 
-# Create a Plotter instance and show
-plt = RayCastPlotter(embryo, bg='black', bg2='blackboard', axes=7)
-plt.show(viewup="z")
+# # Can now add any other vedo object to the Plotter scene:
+# plt += Text2D(__doc__)
+
+plt.show(viewup='z')
 plt.close()
