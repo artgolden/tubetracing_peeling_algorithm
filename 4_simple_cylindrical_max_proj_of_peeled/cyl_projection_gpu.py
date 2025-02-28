@@ -1,27 +1,11 @@
-try:
-    import cupy as cp
-    import cupyx.scipy.interpolate as cpx_interp
-    xp = cp
-    xinterp = cpx_interp
-    backend = "cupy"
-except ImportError:
-    import numpy as np
-    from scipy import interpolate as sp_interp
-    xp = np
-    xinterp = sp_interp
-    backend = "numpy"
-
 from line_profiler import profile
-import numpy as np  # Used for file I/O
+import numpy as np 
+from dexp.utils import xpArray
+from dexp.utils.backends import Backend, BestBackend
+import importlib
 
-
-def to_cpu(array):
-    """Converts a backend array to a NumPy array if necessary."""
-    if backend == "cupy":
-        return cp.asnumpy(array)
-    return array
 @profile
-def cylindrical_cartography_projection(volume, origin, num_r=None, num_theta=None, num_z=None):
+def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, int], num_r=None, num_theta=None, num_z=None) -> np.ndarray:
     """
     Converts the embryo volume to cylindrical coordinates with the cylinder axis
     parallel to the original image's X axis. The cylindrical coordinate system is centered at
@@ -41,6 +25,10 @@ def cylindrical_cartography_projection(volume, origin, num_r=None, num_theta=Non
     Returns:
         array: A 2D array (theta x z) corresponding to the maximum intensity projection along the radial direction.
     """
+    xp = Backend.get_xp_module()
+    sp = Backend.get_sp_module()
+    interpolate = importlib.import_module(".interpolate", sp.__name__) # Had to use a workaround, since sp.interpolate gives an error: 
+                                                                       # module 'cupyx.scipy' has no attribute 'interpolate' when backend is CuPy
     # Unpack the origin
     origin_z, origin_y, origin_x = origin
 
@@ -79,7 +67,7 @@ def cylindrical_cartography_projection(volume, origin, num_r=None, num_theta=Non
     points = (grid_z, grid_y, grid_x)
     
     # Interpolate using linear interpolation.
-    cylindrical_volume = xinterp.interpn(points, volume, xi, method="linear", bounds_error=False, fill_value=0)
+    cylindrical_volume = interpolate.interpn(points, volume, xi, method="linear", bounds_error=False, fill_value=0)
     print("Cylindrical volume shape:", cylindrical_volume.shape)
     
     # Compute the maximum intensity projection along the radial (r) axis.
@@ -90,13 +78,7 @@ def cylindrical_cartography_projection(volume, origin, num_r=None, num_theta=Non
 
 if __name__ == "__main__":
     # Load the volume using NumPy (file I/O remains on CPU).
-    volume_cpu = np.load("outs/down_cropped_minus_hull.npy")
-    # If using CuPy, move the array to the GPU.
-    if backend == "cupy":
-        volume = cp.asarray(volume_cpu)
-    else:
-        volume = volume_cpu
-    volume = volume[::-1, :, :]  # Reverse along the first axis.
+    volume = np.load("outs/down_cropped_minus_hull.npy")
     
     # Define the cylindrical coordinate origin.
     origin_z = 0
@@ -104,10 +86,10 @@ if __name__ == "__main__":
     origin_x = volume.shape[2] // 2  # Middle of X
     origin = (origin_z, origin_y, origin_x)
 
-    # Run the projection inside the scalene profiler.
-    # with scalene.profile.Scalene():
-    projection = cylindrical_cartography_projection(volume, origin)
-    
-    # Convert result to a CPU (NumPy) array before saving.
-    projection_cpu = to_cpu(projection)
-    np.save("outs/cylindrical_projection.npy", projection_cpu)
+    with BestBackend():
+        volume = Backend.to_backend(volume)
+        volume = volume[::-1, :, :]  # Reverse along the first axis.
+        projection = cylindrical_cartography_projection(volume, origin)
+        
+        projection_cpu = Backend.to_numpy(projection)
+        np.save("outs/cylindrical_projection.npy", projection_cpu)
