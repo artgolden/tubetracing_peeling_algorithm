@@ -6,6 +6,7 @@ from dexp.utils import xpArray
 from dexp.utils.backends import Backend, BestBackend, NumpyBackend
 import importlib
 from scipy import ndimage as cpu_ndimage
+from numba import njit
 
 def load_3d_volume(file_path):
     """
@@ -155,7 +156,7 @@ def detect_signal_start(intensity, bkg_std, smoothing_window=4, threshold_factor
     else:
         return signal_start_index[0]
 
-def raytracing_in_polar(polar_volume, bkg_std, patch_size=1):
+def raytracing_in_polar(polar_volume, bkg_std, patch_size=1, tubetracing_density="sparse"):
     """
     Performs ray tracing in the polar volume to detect the start of a signal along each ray.
     Instead of processing each (theta, phi) ray individually, the function collects intensity
@@ -177,8 +178,17 @@ def raytracing_in_polar(polar_volume, bkg_std, patch_size=1):
     theta_res, phi_res, rho_res = polar_volume.shape
     signal_starts = np.zeros((theta_res, phi_res))
 
-    for theta_idx in range(theta_res):
-        for phi_idx in range(phi_res):
+    ray_step = 1
+    match tubetracing_density:
+        case "sparse":
+            ray_step = 1 + 2 * patch_size
+        case "dense":
+            ray_step = 1
+        case _:
+            raise ValueError("Invalid tubetracing_density value. Choose from 'sparse', 'dense'.")
+
+    for theta_idx in range(0, theta_res, ray_step):
+        for phi_idx in range(0, phi_res, ray_step):
             # Define patch boundaries ensuring indices remain within valid limits
             theta_min = max(0, theta_idx - patch_size)
             theta_max = min(theta_res, theta_idx + patch_size + 1)
@@ -251,6 +261,7 @@ def filter_high_rho_outliers(signal_starts, threshold_factor=1.2, min_neighbors=
 
     return filtered_signal_starts
 
+@njit(cache=True)
 def export_signal_points(signal_starts, origin, theta_res, phi_res, orig_vol_shape, phi_max):
     """
     Exports the 3D coordinates of detected signals (in ZYX order) to a CSV file.
@@ -467,9 +478,9 @@ if __name__ == "__main__":
 
         # Tubetracing, get surface point cloud
         polar_volume = cartesian_to_polar(volume, origin, phi_max = phi_max)
-        signals = raytracing_in_polar(Backend.to_numpy(polar_volume), bkg_std)
-        filtered_signals = filter_high_rho_outliers(signals)
-        points = export_signal_points(filtered_signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
+        signals = raytracing_in_polar(Backend.to_numpy(polar_volume), bkg_std, tubetracing_density="sparse")
+        # filtered_signals = filter_high_rho_outliers(signals)
+        points = export_signal_points(signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
         points = add_projected_embryo_outline_points(volume.shape, points)
         save_points_to_csv(points, "outs/surface_points.csv")
 

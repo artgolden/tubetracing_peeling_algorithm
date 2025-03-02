@@ -3,3 +3,6 @@
 .profiles
 profile.
 .vscode
+__pycache__
+outs/*
+*.npy
