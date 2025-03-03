@@ -58,16 +58,17 @@ def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, 
     orig_x = z_grid + origin_x  # recover the original x coordinate
     
     # Prepare points for interpolation (volume is in Z, Y, X order).
-    xi = xp.stack((orig_z, orig_y, orig_x), axis=-1)
+    xi = xp.stack((orig_z, orig_y, orig_x), axis=-1).astype(xp.float16)
     
     # Define the grid for the original volume.
-    grid_z = xp.arange(volume.shape[0])
-    grid_y = xp.arange(volume.shape[1])
-    grid_x = xp.arange(volume.shape[2])
+    grid_z = xp.arange(volume.shape[0], dtype=xp.float16)
+    grid_y = xp.arange(volume.shape[1], dtype=xp.float16)
+    grid_x = xp.arange(volume.shape[2], dtype=xp.float16)
     points = (grid_z, grid_y, grid_x)
     
     # Interpolate using linear interpolation.
-    cylindrical_volume = interpolate.interpn(points, volume, xi, method="linear", bounds_error=False, fill_value=0)
+    volume = volume.astype(xp.float16)
+    cylindrical_volume = interpolate.interpn(points, volume, xi, method="nearest", bounds_error=False, fill_value=0)
     print("Cylindrical volume shape:", cylindrical_volume.shape)
     
     # Compute the maximum intensity projection along the radial (r) axis.
@@ -88,7 +89,8 @@ if __name__ == "__main__":
 
     with BestBackend():
         volume = Backend.to_backend(volume)
-        volume = volume[::-1, :, :]  # Reverse along the first axis.
+        volume = volume[::-1, :, :] 
+        volume = volume[:,50:-50, 90:-90]
         projection = cylindrical_cartography_projection(volume, origin)
         
         projection_cpu = Backend.to_numpy(projection)
