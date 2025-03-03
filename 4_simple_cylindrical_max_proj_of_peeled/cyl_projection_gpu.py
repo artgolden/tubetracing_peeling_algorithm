@@ -34,7 +34,7 @@ def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, 
 
     # Determine the maximum radius as half the size of the original y-dimension.
     orig_img_y_max = volume.shape[1]
-    max_r = orig_img_y_max / 2.0
+    max_r = orig_img_y_max / 2.0 * 1.1
 
     # Set default sampling resolutions if not provided.
     if num_r is None:
@@ -81,16 +81,16 @@ if __name__ == "__main__":
     # Load the volume using NumPy (file I/O remains on CPU).
     volume = np.load("outs/down_cropped_minus_hull.npy")
     
-    # Define the cylindrical coordinate origin.
-    origin_z = 0
-    origin_y = volume.shape[1] // 2  # Middle of Y
-    origin_x = volume.shape[2] // 2  # Middle of X
-    origin = (origin_z, origin_y, origin_x)
 
     with BestBackend():
         volume = Backend.to_backend(volume)
         volume = volume[::-1, :, :] 
         volume = volume[:,50:-50, 90:-90]
+        # Define the cylindrical coordinate origin.
+        origin_z = 0
+        origin_y = volume.shape[1] // 2  # Middle of Y
+        origin_x = volume.shape[2] // 2  # Middle of X
+        origin = (origin_z, origin_y, origin_x)
         projection = cylindrical_cartography_projection(volume, origin)
         
         projection_cpu = Backend.to_numpy(projection)

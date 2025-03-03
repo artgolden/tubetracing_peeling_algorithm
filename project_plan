@@ -33,9 +33,20 @@ Current TODO:
 + Add embryo projection outline as a countour of points at Z=max for the convexHull to be extending to volume border.
 + Integrate convexHull, binarization and substraction from the image using vedo library into main code
 + Export binarized substraction mask as a file and the substraction volume center point such that later it can be used for the plugin of manual surface substraction correction.
+- Add raw_images -> merged_images, creating MIP and threshold mask, downsampling to the main script
+- Add upsampling the substraction volume mask to the original resolution and outputing full res substracted volume and cartography
+- Add logic to do it for a time series, where the shape of the crop region is fixed by the first timepoint, that should ensure same size for cartography projections
+- Make sure that substraction mask, substracted volume and cartography projection are saved in the outputs folder
+- Make the script operate on a folder with several groups of time series. same as for drift correction script.
+  - Expose most parameters as cli arguments, including image file name mask for general use by other people
+- Add proper logging, printing of finished operations per image and progress bar
+- check documentation for functions
+
+
 
 For later:
 - Add finding the z of embry central axis by fitting a circle to X projection
 - Find parameter value for alpha shapes that are good for bean shaped embryos instead of convexHull
 - Write a Napari plugin that allows to manually correct the substraction mask by clicking on the cartography projection, and thus adding or sustracting from the surface of the substraction mask volume at a correspoinding location. It will probably be convenient to have substraction mask be in cylindrical coordinates same as the cartography projection.
 - Check whether transposes from ZYX to XYZ are necessary for the vedo library.
+- When cropping right to the embryo, just assuming embryo is a circle when doing cylindrical projection is not good enough. Need better estimation of the embryo size and r_max.
