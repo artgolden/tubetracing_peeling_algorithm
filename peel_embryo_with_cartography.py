@@ -255,7 +255,7 @@ def find_background_std(volume: xpArray) -> float:
     print(f"Background standard deviation: {bkg_std}")
     return bkg_std
 
-def detect_signal_start(intensity, bkg_std, smoothing_window=4, threshold_factor=2.5):
+def detect_signal_start(intensity, bkg_std, smoothing_window=4, threshold_factor=1.5):
     intensity = np.trim_zeros(intensity, trim='b')
     
     # Smooth the intensity values to reduce noise
@@ -275,7 +275,7 @@ def detect_signal_start(intensity, bkg_std, smoothing_window=4, threshold_factor
     else:
         return signal_start_index[0]
 
-def raytracing_in_polar(polar_volume, bkg_std, patch_size=1, tubetracing_density="sparse"):
+def raytracing_in_polar(polar_volume, bkg_std, patch_size=1, tubetracing_density="dense"):
     """
     Performs ray tracing in the polar volume to detect the start of a signal along each ray.
     Instead of processing each (theta, phi) ray individually, the function collects intensity
@@ -310,9 +310,9 @@ def raytracing_in_polar(polar_volume, bkg_std, patch_size=1, tubetracing_density
         for phi_idx in range(0, phi_res, ray_step):
             # Define patch boundaries ensuring indices remain within valid limits
             theta_min = max(0, theta_idx - patch_size)
-            theta_max = min(theta_res, theta_idx + patch_size + 1)
+            theta_max = min(theta_res - 1, theta_idx + patch_size + 1)
             phi_min = max(0, phi_idx - patch_size)
-            phi_max = min(phi_res, phi_idx + patch_size + 1)
+            phi_max = min(phi_res - 1, phi_idx + patch_size + 1)
 
             # Extract the patch and average the intensity profiles along theta and phi dimensions
             patch_profiles = polar_volume[theta_min:theta_max, phi_min:phi_max, :]
@@ -505,7 +505,7 @@ def substract_mask_from_embryo_volume(volume_zyx: np.ndarray, mask_xyz) -> np.nd
     diff = embryo.clone().operation("*",mask_xyz)
     return diff.tonumpy()
 
-def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, int], num_r=None, num_theta=None, num_z=None) -> np.ndarray:
+def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, int], num_r=None, num_theta=None, num_z=None, exclude_poles_from_cyl_projection=True) -> np.ndarray:
     """
     Converts the embryo volume to cylindrical coordinates with the cylinder axis
     parallel to the original image's X axis. The cylindrical coordinate system is centered at
@@ -545,6 +545,11 @@ def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, 
     if num_z is None:
         num_z = volume.shape[2]
     
+    r_min = 0
+    if exclude_poles_from_cyl_projection:
+        num_r = round(max_r - max_r*0.6)
+        r_min = max_r*0.6
+
     # Define the cylindrical grid.
     r_vals = xp.linspace(0, max_r, num_r)
     theta_vals = xp.linspace(0, xp.pi, num_theta, endpoint=False)
@@ -569,14 +574,14 @@ def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, 
     
     # Interpolate using linear interpolation.
     volume = volume.astype(xp.float16)
-    cylindrical_volume = interpolate.interpn(points, volume, xi, method="nearest", bounds_error=False, fill_value=0)
+    cylindrical_volume = interpolate.interpn(points, volume, xi, method="linear", bounds_error=False, fill_value=0)
     print("Cylindrical volume shape:", cylindrical_volume.shape)
     
     # Compute the maximum intensity projection along the radial (r) axis.
     projection = xp.max(cylindrical_volume, axis=0)
     print("Projection shape:", projection.shape)
     
-    return projection
+    return projection[::-1,:]
 
 def upscale_mask(mask: np.ndarray, full_res_shape: tuple[int,int,int]) -> np.ndarray:
     return transform.resize(
@@ -608,6 +613,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray, downsampled_zyx: np.n
         signals = raytracing_in_polar(Backend.to_numpy(polar_volume), bkg_std, tubetracing_density="sparse")
         # filtered_signals = filter_high_rho_outliers(signals)
         points = export_signal_points(signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
+        print(f"Number of detected points: {len(points)}")
         points = add_projected_embryo_outline_points(volume.shape, points)
         np.save(os.path.join(output_dir, "surface_points.npy"), points)
         if save_points_to_file:
@@ -715,6 +721,10 @@ def peel_timepoint(ill_file_paths: list[str]):
     peel_embryo_with_cartography(full_res_isotropic, down_cropped, "outs")
 
 if __name__ == "__main__":
-    ill_file_paths = ["0_raw_data_merge_illum/timelapseID-20240926-211701_SPC-0002_TP-0400_ILL-0_CAM-1_CH-00_PL-(ZS)-outOf-0072.tif",
-                      "0_raw_data_merge_illum/timelapseID-20240926-211701_SPC-0002_TP-0400_ILL-1_CAM-1_CH-00_PL-(ZS)-outOf-0072.tif"]
+    # ill_file_paths = ["0_raw_data_merge_illum/timelapseID-20240926-211701_SPC-0002_TP-0400_ILL-0_CAM-1_CH-00_PL-(ZS)-outOf-0072.tif",
+    #                   "0_raw_data_merge_illum/timelapseID-20240926-211701_SPC-0002_TP-0400_ILL-1_CAM-1_CH-00_PL-(ZS)-outOf-0072.tif"]
+    # ill_file_paths = ["/procbuffer/Artemiy/test_data_for_serosa_peeling/very_bright_inside_test/timelapseID-20241008-143038_SPC-0002_TP-0870_ILL-0_CAM-1_CH-01_PL-(ZS)-outOf-0075.tif",
+    #                   "/procbuffer/Artemiy/test_data_for_serosa_peeling/very_bright_inside_test/timelapseID-20241008-143038_SPC-0002_TP-0870_ILL-1_CAM-1_CH-01_PL-(ZS)-outOf-0075.tif"]
+    ill_file_paths = ["/procbuffer/Artemiy/test_data_for_serosa_peeling/very_bright_inside_test/timelapseID-20241008-143038_SPC-0001_TP-0870_ILL-0_CAM-1_CH-01_PL-(ZS)-outOf-0073.tif",
+                      "/procbuffer/Artemiy/test_data_for_serosa_peeling/very_bright_inside_test/timelapseID-20241008-143038_SPC-0001_TP-0870_ILL-1_CAM-1_CH-01_PL-(ZS)-outOf-0073.tif"]
     peel_timepoint(ill_file_paths)

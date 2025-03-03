@@ -43,9 +43,9 @@ def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, 
         num_theta = int(xp.pi * max_r)  # based on the half-circumference
     if num_z is None:
         num_z = volume.shape[2]
-    
+    num_r = round(max_r - max_r*0.6)
     # Define the cylindrical grid.
-    r_vals = xp.linspace(0, max_r, num_r)
+    r_vals = xp.linspace(max_r*0.6, max_r, num_r)
     theta_vals = xp.linspace(0, xp.pi, num_theta, endpoint=False)
     z_vals = xp.linspace(-origin_x, volume.shape[2] - 1 - origin_x, num_z)
     
@@ -75,7 +75,7 @@ def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, 
     projection = xp.max(cylindrical_volume, axis=0)
     print("Projection shape:", projection.shape)
     
-    return projection
+    return projection[::-1,:]
 
 if __name__ == "__main__":
     # Load the volume using NumPy (file I/O remains on CPU).
