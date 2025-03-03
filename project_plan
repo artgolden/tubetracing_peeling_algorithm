@@ -26,20 +26,20 @@ x A lot of erroneours detections inside the embryo. But convex hull gives prety 
 - Try 3d median filter for better detection?
 x Or some other form of 3d denoising?
 x there are lots of detections around the origin of the polar coords, why is that? = Looks like it was because of the rays pointing away from the image volume, limiting Phi to 0:Pi/2 solved it.
-- Add cylindrical_cartography_projection to main script
++ Add cylindrical_cartography_projection to main script
 
 
 Current TODO:
 + Add embryo projection outline as a countour of points at Z=max for the convexHull to be extending to volume border.
 + Integrate convexHull, binarization and substraction from the image using vedo library into main code
 + Export binarized substraction mask as a file and the substraction volume center point such that later it can be used for the plugin of manual surface substraction correction.
-- Add raw_images -> merged_images, creating MIP and threshold mask, downsampling to the main script
-- Add upsampling the substraction volume mask to the original resolution and outputing full res substracted volume and cartography
-- Add logic to do it for a time series, where the shape of the crop region is fixed by the first timepoint, that should ensure same size for cartography projections
-- Make sure that substraction mask, substracted volume and cartography projection are saved in the outputs folder
-- Make the script operate on a folder with several groups of time series. same as for drift correction script.
++ Add raw_images -> merged_images, creating MIP and threshold mask, downsampling to the main script
++ Add upsampling the substraction volume mask to the original resolution and outputing full res substracted volume and cartography
++ Add logic to do it for a time series, where the shape of the crop region is fixed by the first timepoint, that should ensure same size for cartography projections
++ Make sure that substraction mask, substracted volume and cartography projection are saved in the outputs folder
++ Make the script operate on a folder with several groups of time series. same as for drift correction script.
   - Expose most parameters as cli arguments, including image file name mask for general use by other people
-- Add proper logging, printing of finished operations per image and progress bar
++ Add proper logging, printing of finished operations per image and progress bar
 - check documentation for functions
 
 

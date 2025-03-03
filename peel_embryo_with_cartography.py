@@ -1,5 +1,12 @@
+import datetime
+import time
 import tifffile as tiff
 import os
+from pathlib import Path
+import re
+import argparse
+import logging
+from tqdm import tqdm
 import numpy as np
 import json
 from skimage import measure
@@ -83,7 +90,7 @@ def crop_rotated_3d(image, center, size, rotation_matrix) -> Optional[np.ndarray
     
     return cropped_region
 
-def crop_around_embryo(image_3d, mask) -> Optional[np.ndarray]:
+def crop_around_embryo(image_3d, mask, target_crop_shape=None) -> Optional[np.ndarray]:
     """
     Detects the largest object in a boolean image mask, fits an ellipse (RotatedRect),
     crops the corresponding region from a 3D image, and saves the cropped region
@@ -143,6 +150,8 @@ def crop_around_embryo(image_3d, mask) -> Optional[np.ndarray]:
     center = (full_depth/2, center_y, center_x)  
     expand_r = RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO
     size = (full_depth, int(width)*expand_r, int(height)*expand_r)  
+    if target_crop_shape is not None:
+        size = target_crop_shape
 
     # Convert angle to radians
     theta = np.radians(angle_deg - 90)
@@ -442,18 +451,6 @@ def add_projected_embryo_outline_points(volume_shape_zyx, points) -> np.ndarray:
     more_points = np.concatenate((points, p_proj))
     return more_points
 
-def save_points_to_csv(points, output_file):
-    """
-    Save the given points to a CSV file.
-    """
-        # Ensure the output directory exists
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
-
-    # Save the points to a CSV file with a header
-    np.savetxt(output_file, points, delimiter=",", header="z,y,x", comments="", fmt='%.3f')
-
-    print(f"Exported {points.shape[0]} signal points to {output_file}")
-
 def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=3) -> Volume:
     """
     Converts a set of 3D points to a binary volume mask of the inner part of the embryo using a convex hull.
@@ -597,7 +594,18 @@ def get_origin(volume) -> tuple[int, int, int]:
     origin_x = volume.shape[2] // 2  # Middle of X
     return origin_z, origin_y, origin_x
 
-def peel_embryo_with_cartography(full_res_zyx: np.ndarray, downsampled_zyx: np.ndarray, output_dir:str, save_points_to_file:bool=False, do_cylindrical_cartography=True) -> None:
+def peel_embryo_with_cartography(full_res_zyx: np.ndarray, 
+                                 downsampled_zyx: np.ndarray, 
+                                 output_dir:str, 
+                                 timepoint:int,
+                                 do_cylindrical_cartography=True,
+                                 do_save_points:bool=False, 
+                                 do_save_peeled_volume=True,
+                                 do_save_mask=False) -> None:
+    cartography_dir = os.path.join(output_dir, "cylindrical_cartography")
+    os.makedirs(cartography_dir, exist_ok=True)
+    cartography_file = os.path.join(cartography_dir, "cylindrical_projection.tif")
+    
     with BestBackend():
         xp = Backend.get_xp_module()
         volume = Backend.to_backend(downsampled_zyx)
@@ -615,20 +623,26 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray, downsampled_zyx: np.n
         points = export_signal_points(signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
         print(f"Number of detected points: {len(points)}")
         points = add_projected_embryo_outline_points(volume.shape, points)
-        np.save(os.path.join(output_dir, "surface_points.npy"), points)
-        if save_points_to_file:
-            save_points_to_csv(points, os.path.join(output_dir, "surface_points.csv"))
+        if do_save_points:
+            points_dir = os.path.join(output_dir, "surface_points")
+            os.makedirs(points_dir, exist_ok=True)
+            np.save(os.path.join(points_dir, f"tp_{timepoint}_surface_points.npy"), points)
 
         # Create a volume mask from the points
         mask = points_to_convex_hull_volume_mask(points, volume.shape, dilation_radius=3)
         mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
-        np.save(os.path.join(output_dir, "down_cropped_hull_mask.npy"), mask_np)
         mask_upscaled = upscale_mask(mask_np, full_res_zyx.shape)
-        np.save(os.path.join(output_dir, "upscaled_hull_mask.npy"), mask_upscaled)
+        if do_save_mask:
+            mask_dir = os.path.join(output_dir, "substraction_embryo_mask")
+            os.makedirs(mask_dir, exist_ok=True)
+            np.save(os.path.join(mask_dir, f"tp_{timepoint}_upscaled_mask.npy"), mask_upscaled)
 
         # Subtract the mask from the embryo volume
         peeled_volume = substract_mask_from_embryo_volume(full_res_zyx, mask_upscaled)
-        np.save(os.path.join(output_dir, "down_cropped_minus_hull.npy"), peeled_volume)
+        if do_save_peeled_volume:
+            peeled_volume_dir = os.path.join(output_dir, "peeled_volume")
+            os.makedirs(peeled_volume_dir, exist_ok=True)
+            tiff.imwrite(os.path.join(peeled_volume_dir, f"tp_{timepoint}_peeled_volume.npy"), peeled_volume.astype(np.uint8))
 
         if do_cylindrical_cartography:
             # Do a cylindrical cartography projection of the peeled volume
@@ -639,11 +653,13 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray, downsampled_zyx: np.n
             peeled_volume = Backend.to_backend(peeled_volume, dtype=xp.float16)[::-1,:,:]
             peeled_volume = peeled_volume[:, y_crop:-y_crop, x_crop:-x_crop]
             cylindrical_projection = cylindrical_cartography_projection(peeled_volume, get_origin(peeled_volume))
-            projection_cpu = Backend.to_numpy(cylindrical_projection)
-            np.save(os.path.join(output_dir, "cylindrical_projection.npy"), projection_cpu)
+            projection_cpu = Backend.to_numpy(cylindrical_projection, dtype=np.uint8)
 
-        print("Original volume shape:", volume.shape)
-        print("Polar volume shape:", polar_volume.shape)
+            cartography_dir = os.path.join(output_dir, "cylindrical_cartography")
+            os.makedirs(cartography_dir, exist_ok=True)
+            cartography_file = os.path.join(cartography_dir, f"tp_{timepoint}_cyl_proj.tif")
+            tiff.imwrite(cartography_file, projection_cpu)
+        
 
 def load_and_merge_illuminations(ill_file_paths: list[str]):
     images = [load_3d_volume(f) for f in ill_file_paths]
@@ -691,40 +707,177 @@ def threshold_image_xy(volume: np.ndarray):
     th = filters.threshold_triangle(img_median)
     return img_median >= th
 
-def peel_timepoint(ill_file_paths: list[str]):
-    if not DEBUG_MODE_WITH_CACHING:
-        print(f"Peeling timepoint for files: {ill_file_paths}")
-        print(f"Merging illuminations")
-        merged_volume = load_and_merge_illuminations(ill_file_paths)
-        if merged_volume is None:
-            print(f"Error loading merged volume for files: {ill_file_paths}")
-            return None
-        
-        mask = threshold_image_xy(merged_volume)
-        cropped_volume = crop_around_embryo(merged_volume, mask)
-        print(f"Cropping around embryo")
-        if cropped_volume is None:
-            print(f"Error segmenting and cropping around embryo for files: {ill_file_paths}")
-            return None
-        print(f"Cropped volume shape: {cropped_volume.shape}")
-        
-        down_cropped = get_downsampled_and_isotropic(cropped_volume)
-        print(f"Downsampled volume shape: {down_cropped.shape}")
-        np.save("outs/down_cropped.npy", down_cropped)
-        full_res_isotropic = get_isotropic_volume(cropped_volume)
-        np.save("outs/cropped_isotropic.npy", full_res_isotropic)
-    else:
-        down_cropped = np.load("outs/down_cropped.npy")
-        full_res_isotropic = np.load("outs/cropped_isotropic.npy")
+def parse_filename(filepath: str):
+    """
+    Parse a TIF file name of the form:
+    timelapseID-20241008-143038_SPC-0001_TP-0870_ILL-0_CAM-1_CH-01_PL-(ZS)-outOf-0073.tif
+    Returns:
+        timeseries_key: a string identifying the time series (all parts except the TP and ILL parts)
+        timepoint: integer value parsed after _TP-
+        illumination: integer value parsed after _ILL-
+    """
+    base = os.path.basename(filepath)
+    tp_match = re.search(r'_TP-(\d+)', base)
+    ill_match = re.search(r'_ILL-(\d+)', base)
+    if not (tp_match and ill_match):
+        raise ValueError(f"Filename {base} does not match expected pattern.")
+    timepoint = int(tp_match.group(1))
+    illumination = int(ill_match.group(1))
+    # Remove TP and ILL parts to form the timeseries key
+    timeseries_key = re.sub(r'_TP-\d+', '', base)
+    timeseries_key = re.sub(r'_ILL-\d+', '', timeseries_key)
+    # Remove file extension
+    timeseries_key = os.path.splitext(timeseries_key)[0]
+    return timeseries_key, timepoint, illumination
 
-    print(f"Peeling embryo with cartography")
-    peel_embryo_with_cartography(full_res_isotropic, down_cropped, "outs")
+def group_files(file_list):
+    """
+    Group files by timeseries key and then by timepoint.
+    Returns a dictionary:
+       { timeseries_key: { timepoint: [list of file paths for this timepoint] } }
+    """
+    series_dict = {}
+    for f in file_list:
+        try:
+            key, tp, ill = parse_filename(f)
+        except ValueError as e:
+            logging.warning(str(e))
+            continue
+        if key not in series_dict:
+            series_dict[key] = {}
+        series_dict[key].setdefault(tp, []).append(f)
+    return series_dict
+
+
+def process_timepoint(ill_file_paths: list, output_dir: str, timepoint: int, target_crop_shape=None, do_save_down_cropped=False, do_save_cropped_iso=False):
+    """
+    Process one timepoint.
+    
+    Parameters:
+      ill_file_paths: list of file paths for the current timepoint (1 or 2 illuminations)
+      output_dir: folder where outputs for this timepoint will be saved (sub-folders will be created)
+      target_crop_shape: if provided, crop_around_embryo() will be called with this shape.
+      
+    Returns:
+      The shape of the cropped volume (to be used as target_crop_shape for subsequent timepoints)
+      or None if processing failed.
+    """
+    logging.info(f"Processing timepoint with files: {ill_file_paths}")
+    print(f"Processing timepoint {timepoint}")
+    
+    # Merge illuminations for the timepoint
+    merged_volume = load_and_merge_illuminations(ill_file_paths)
+    if merged_volume is None:
+        logging.error(f"Error loading merged volume for files: {ill_file_paths}")
+        return None
+
+    # Threshold to get mask
+    mask = threshold_image_xy(merged_volume)
+    
+    # Crop around embryo. For the first timepoint, we call without target_crop_shape.
+    # For subsequent timepoints, crop_around_embryo should use the provided target shape.
+    if target_crop_shape is None:
+        cropped_volume = crop_around_embryo(merged_volume, mask)
+    else:
+        cropped_volume = crop_around_embryo(merged_volume, mask, target_crop_shape)
+    
+    if cropped_volume is None:
+        logging.error(f"Error segmenting and cropping around embryo for files: {ill_file_paths}")
+        return None
+    logging.info(f"TP: {timepoint} Cropped volume shape: {cropped_volume.shape}")
+    print(f"TP: {timepoint} Cropped volume shape: {cropped_volume.shape}")
+    
+    down_cropped = get_downsampled_and_isotropic(cropped_volume)
+    if do_save_down_cropped:
+        down_dir = os.path.join(output_dir, "downsampled_cropped")
+        os.makedirs(down_dir, exist_ok=True)
+        np.save(os.path.join(down_dir, f"down_cropped_tp_{timepoint}.npy"), down_cropped)
+    
+    full_res_iso = get_isotropic_volume(cropped_volume)
+    if do_save_cropped_iso:
+        iso_dir = os.path.join(output_dir, "cropped_isotropic_embryo")
+        os.makedirs(iso_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(iso_dir, f"cropped_isotropic_tp_{timepoint}.npy"), full_res_iso)
+    
+
+    peel_embryo_with_cartography(full_res_iso, down_cropped, output_dir, timepoint)
+    
+    return cropped_volume.shape
+
+def process_time_series(timeseries_key: str, timepoints_dict: dict, base_out_dir: str):
+    """
+    Process a single time series.
+    
+    Parameters:
+      timeseries_key: unique identifier for the time series
+      timepoints_dict: dictionary with keys as timepoint integers and values as list of file paths
+      base_out_dir: base output folder where time series folders are created
+    """
+    series_out_dir = os.path.join(base_out_dir, timeseries_key)
+    os.makedirs(series_out_dir, exist_ok=True)
+    logging.info(f"Processing time series: {timeseries_key}")
+    print(f"Processing time series: {timeseries_key}")
+    
+    # Process timepoints in ascending order
+    sorted_timepoints = sorted(timepoints_dict.keys())
+    target_crop_shape = None  # will be set by the first processed timepoint
+    
+    # Use tqdm to show progress for this time series
+    for tp in tqdm(sorted_timepoints, desc=f"Series {timeseries_key}", unit="timepoint"):
+        tp_files = timepoints_dict[tp]
+        crop_shape = process_timepoint(tp_files, series_out_dir, tp, target_crop_shape)
+        # Save crop shape from first timepoint and use for subsequent timepoints
+        if target_crop_shape is None and crop_shape is not None:
+            target_crop_shape = crop_shape
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Process a folder of 3D embryo TIF images: group them into time series, "
+                    "apply peeling and cylindrical cartographic projection to each timepoint."
+    )
+    parser.add_argument("input_folder", type=str, help="Folder containing TIF files")
+    parser.add_argument("--output_folder", type=str, default=None, 
+                        help="Output folder (default: <input_folder>/outs)")
+    parser.add_argument("--log_level", type=str, default="INFO", help="Logging level (DEBUG, INFO, etc.)")
+    args = parser.parse_args()
+    
+    input_folder = args.input_folder
+    output_folder = args.output_folder if args.output_folder else os.path.join(input_folder, "outs")
+    os.makedirs(output_folder, exist_ok=True)
+    
+    # Setup logging
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = os.path.join(output_folder, f"process_{timestamp}.log")
+    logging.basicConfig(
+        filename=log_file,
+        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+    logging.info("Starting processing of time series")
+    print("Starting processing...")
+    
+    # Find all TIF files in the input folder
+    tif_files = [
+        os.path.join(input_folder, f)
+        for f in os.listdir(input_folder)
+        if f.lower().endswith(".tif")
+    ]
+    logging.info(f"Found {len(tif_files)} TIF files in {input_folder}")
+    if not tif_files:
+        logging.error("No TIF files found in input folder.")
+        print("No TIF files found. Exiting.")
+        return
+    
+    # Group files into time series and timepoints
+    timeseries_dict = group_files(tif_files)
+    logging.info(f"Found {len(timeseries_dict)} time series")
+    
+    # Process each time series
+    for series_key, tp_dict in timeseries_dict.items():
+        process_time_series(series_key, tp_dict, output_folder)
+    
+    logging.info("Processing complete")
+    print("Processing complete.")
 
 if __name__ == "__main__":
-    # ill_file_paths = ["0_raw_data_merge_illum/timelapseID-20240926-211701_SPC-0002_TP-0400_ILL-0_CAM-1_CH-00_PL-(ZS)-outOf-0072.tif",
-    #                   "0_raw_data_merge_illum/timelapseID-20240926-211701_SPC-0002_TP-0400_ILL-1_CAM-1_CH-00_PL-(ZS)-outOf-0072.tif"]
-    # ill_file_paths = ["/procbuffer/Artemiy/test_data_for_serosa_peeling/very_bright_inside_test/timelapseID-20241008-143038_SPC-0002_TP-0870_ILL-0_CAM-1_CH-01_PL-(ZS)-outOf-0075.tif",
-    #                   "/procbuffer/Artemiy/test_data_for_serosa_peeling/very_bright_inside_test/timelapseID-20241008-143038_SPC-0002_TP-0870_ILL-1_CAM-1_CH-01_PL-(ZS)-outOf-0075.tif"]
-    ill_file_paths = ["/procbuffer/Artemiy/test_data_for_serosa_peeling/very_bright_inside_test/timelapseID-20241008-143038_SPC-0001_TP-0870_ILL-0_CAM-1_CH-01_PL-(ZS)-outOf-0073.tif",
-                      "/procbuffer/Artemiy/test_data_for_serosa_peeling/very_bright_inside_test/timelapseID-20241008-143038_SPC-0001_TP-0870_ILL-1_CAM-1_CH-01_PL-(ZS)-outOf-0073.tif"]
-    peel_timepoint(ill_file_paths)
+    main()
