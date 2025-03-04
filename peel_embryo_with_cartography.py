@@ -24,7 +24,7 @@ from scipy import ndimage as cpu_ndimage
 from numba import njit
 from typing import Union, Optional
 
-DEBUG_MODE_WITH_CACHING = False
+DEBUG_MODE = True
 RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO = 1.15
 
 def load_3d_volume(file_path):
@@ -55,7 +55,7 @@ def load_3d_volume(file_path):
         print(f"Error loading TIFF file: {e}")
         return None
 
-def crop_rotated_3d(image, center, size, rotation_matrix) -> Optional[np.ndarray]:
+def crop_rotated_3d(image, center, size, rotation_matrix):
     """
     Crops a rotated 3D region from an image.
     
@@ -102,20 +102,20 @@ def crop_around_embryo(image_3d, mask, target_crop_shape=None) -> Optional[np.nd
         image_3d (numpy.ndarray): The 3D image (Z, Y, X) to crop from.
         mask (numpy.ndarray): Boolean image mask (Y, X).
     """
+    
+
 
     # 1. Input validation
-    if not isinstance(image_3d, np.ndarray):
-        raise TypeError("Input 'image_3d' must be a NumPy array.")
     if len(image_3d.shape) != 3:
         raise ValueError("Input 'image_3d' must be a 3D array (Z, Y, X).")
-    if not isinstance(mask, np.ndarray):
-        raise TypeError("Input 'mask' must be a NumPy array.")
     if mask.dtype != bool:
         raise ValueError("Input 'mask' must be a boolean array (dtype=bool).")
     if len(mask.shape) != 2:
         raise ValueError("Input 'mask' must be a 2D array (grayscale).")
     if image_3d.shape[1] != mask.shape[0] or image_3d.shape[2] != mask.shape[1]:
         raise ValueError("The dimensions of 'image_3d' (Y, X) must match the dimensions of 'mask'.")
+
+
 
     # Convert boolean mask to uint8 - necessary for OpenCV
     binary_image = mask.astype(np.uint8) * 255
@@ -152,8 +152,10 @@ def crop_around_embryo(image_3d, mask, target_crop_shape=None) -> Optional[np.nd
     center = (full_depth/2, center_y, center_x)  
     expand_r = RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO
     size = (full_depth, int(width)*expand_r, int(height)*expand_r)  
+    logging.info(f"Cropping embryo with center: {center}, size: {size}, angle: {angle_deg}")
     if target_crop_shape is not None:
         size = target_crop_shape
+        logging.info(f"Target crop shape was provided: {target_crop_shape}")
 
     # Convert angle to radians
     theta = np.radians(angle_deg - 90)
@@ -266,7 +268,7 @@ def find_background_std(volume: xpArray) -> float:
     print(f"Background standard deviation: {bkg_std}")
     return bkg_std
 
-def detect_signal_start(intensity, bkg_std, smoothing_window=4, threshold_factor=1.5):
+def detect_signal_start(intensity, bkg_std, smoothing_window=4, threshold_factor=2):
     intensity = np.trim_zeros(intensity, trim='b')
     
     # Smooth the intensity values to reduce noise
@@ -534,7 +536,7 @@ def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, 
 
     # Determine the maximum radius as half the size of the original y-dimension.
     orig_img_y_max = volume.shape[1]
-    max_r = orig_img_y_max / 2.0 * 1.1
+    max_r = orig_img_y_max / 2.0 * 1.15
 
     # Set default sampling resolutions if not provided.
     if num_r is None:
@@ -601,66 +603,76 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                  output_dir:str, 
                                  timepoint:int,
                                  do_cylindrical_cartography=True,
-                                 do_save_points:bool=False, 
+                                 do_save_points=True, 
                                  do_save_peeled_volume=True,
-                                 do_save_mask=False) -> None:
-    cartography_dir = os.path.join(output_dir, "cylindrical_cartography")
-    os.makedirs(cartography_dir, exist_ok=True)
-    cartography_file = os.path.join(cartography_dir, "cylindrical_projection.tif")
+                                 do_save_z_max_projection=True,
+                                 do_save_mask=True) -> None:
+    logging.info("Starting peel_embryo_with_cartography")
     
-    with BestBackend():
-        xp = Backend.get_xp_module()
-        volume = Backend.to_backend(downsampled_zyx)
-        volume = volume[::-1, :, :]
 
-        origin = get_origin(volume)
-        phi_max = np.pi / 2
+    xp = Backend.get_xp_module()
+    sp = Backend.get_sp_module()
+    volume = Backend.to_backend(downsampled_zyx)
+    volume = volume[::-1, :, :]
 
-        bkg_std = find_background_std(volume)
+    
+    origin = get_origin(volume)
+    phi_max = np.pi / 2
 
-        # Tubetracing, get surface point cloud
-        polar_volume = cartesian_to_polar(volume, origin, phi_max = phi_max)
-        signals = raytracing_in_polar(Backend.to_numpy(polar_volume), bkg_std, tubetracing_density="sparse")
-        # filtered_signals = filter_high_rho_outliers(signals)
-        points = export_signal_points(signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
-        print(f"Number of detected points: {len(points)}")
-        points = add_projected_embryo_outline_points(volume.shape, points)
-        if do_save_points:
-            points_dir = os.path.join(output_dir, "surface_points")
-            os.makedirs(points_dir, exist_ok=True)
-            np.save(os.path.join(points_dir, f"tp_{timepoint}_surface_points.npy"), points)
+    bkg_std = find_background_std(volume)
 
-        # Create a volume mask from the points
-        mask = points_to_convex_hull_volume_mask(points, volume.shape, dilation_radius=3)
-        mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
-        mask_upscaled = upscale_mask(mask_np, full_res_zyx.shape)
-        if do_save_mask:
-            mask_dir = os.path.join(output_dir, "substraction_embryo_mask")
-            os.makedirs(mask_dir, exist_ok=True)
-            np.save(os.path.join(mask_dir, f"tp_{timepoint}_upscaled_mask.npy"), mask_upscaled)
+    # Tubetracing, get surface point cloud
+    logging.info("Peeling: Starting tubetracing")
+    polar_volume = cartesian_to_polar(volume, origin, phi_max = phi_max)
+    signals = raytracing_in_polar(Backend.to_numpy(polar_volume), bkg_std, tubetracing_density="sparse")
+    # filtered_signals = filter_high_rho_outliers(signals)
+    points = export_signal_points(signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
+    print(f"Number of detected points: {len(points)}")
+    points = add_projected_embryo_outline_points(volume.shape, points)
+    if do_save_points:
+        points_dir = os.path.join(output_dir, "surface_points")
+        os.makedirs(points_dir, exist_ok=True)
+        np.save(os.path.join(points_dir, f"tp_{timepoint}_surface_points.npy"), points)
 
-        # Subtract the mask from the embryo volume
-        peeled_volume = substract_mask_from_embryo_volume(full_res_zyx, mask_upscaled)
-        if do_save_peeled_volume:
-            peeled_volume_dir = os.path.join(output_dir, "peeled_volume")
-            os.makedirs(peeled_volume_dir, exist_ok=True)
-            tiff.imwrite(os.path.join(peeled_volume_dir, f"tp_{timepoint}_peeled_volume.npy"), peeled_volume.astype(np.uint8))
+    # Create a volume mask from the points
+    logging.info("Peeling: Converting points to mask")
+    mask = points_to_convex_hull_volume_mask(points, volume.shape, dilation_radius=3)
+    mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
+    mask_upscaled = upscale_mask(mask_np, full_res_zyx.shape)
+    if do_save_mask:
+        mask_dir = os.path.join(output_dir, "substraction_embryo_mask")
+        os.makedirs(mask_dir, exist_ok=True)
+        np.save(os.path.join(mask_dir, f"tp_{timepoint}_upscaled_mask.npy"), mask_upscaled)
 
-        if do_cylindrical_cartography:
-            # Do a cylindrical cartography projection of the peeled volume
-            reduce_ratio = 1 / RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO
-            _, y_size, x_size = peeled_volume.shape
-            x_crop = int(x_size - x_size * reduce_ratio) // 2
-            y_crop = int(y_size - y_size * reduce_ratio) // 2
-            peeled_volume = Backend.to_backend(peeled_volume, dtype=xp.float16)[::-1,:,:]
-            peeled_volume = peeled_volume[:, y_crop:-y_crop, x_crop:-x_crop]
-            cylindrical_projection = cylindrical_cartography_projection(peeled_volume, get_origin(peeled_volume))
-            projection_cpu = Backend.to_numpy(cylindrical_projection, dtype=np.uint8)
+    # Subtract the mask from the embryo volume
+    logging.info("Peeling: Substracting mask from embryo volume")
+    peeled_volume = substract_mask_from_embryo_volume(full_res_zyx, mask_upscaled)
+    if do_save_peeled_volume:
+        peeled_volume_dir = os.path.join(output_dir, "peeled_volume")
+        os.makedirs(peeled_volume_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(peeled_volume_dir, f"tp_{timepoint}_peeled_volume.tif"), peeled_volume.astype(np.uint8))
 
-            cartography_dir = os.path.join(output_dir, "cylindrical_cartography")
-            os.makedirs(cartography_dir, exist_ok=True)
-            cartography_file = os.path.join(cartography_dir, f"tp_{timepoint}_cyl_proj.tif")
-            tiff.imwrite(cartography_file, projection_cpu)
+    if do_save_z_max_projection:
+        z_max_projection_dir = os.path.join(output_dir, "z_max_projection")
+        os.makedirs(z_max_projection_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(z_max_projection_dir, f"tp_{timepoint}_z_max_projection.tif"), np.max(peeled_volume, axis=0).astype(np.uint8))
+
+    if do_cylindrical_cartography:
+        logging.info("Starting cylindrical cartography projection")
+        # Do a cylindrical cartography projection of the peeled volume
+        reduce_ratio = 1 / RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO
+        _, y_size, x_size = peeled_volume.shape
+        x_crop = int(x_size - x_size * reduce_ratio) // 2
+        y_crop = int(y_size - y_size * reduce_ratio) // 2
+        peeled_volume = Backend.to_backend(peeled_volume, dtype=xp.float16)[::-1,:,:]
+        peeled_volume = peeled_volume[:, y_crop:-y_crop, x_crop:-x_crop]
+        cylindrical_projection = cylindrical_cartography_projection(peeled_volume, get_origin(peeled_volume))
+        projection_cpu = Backend.to_numpy(cylindrical_projection, dtype=np.uint8)
+
+        cartography_dir = os.path.join(output_dir, "cylindrical_cartography")
+        os.makedirs(cartography_dir, exist_ok=True)
+        cartography_file = os.path.join(cartography_dir, f"tp_{timepoint}_cyl_proj.tif")
+        tiff.imwrite(cartography_file, projection_cpu)
         
 
 def load_and_merge_illuminations(ill_file_paths: list[str]):
@@ -691,16 +703,15 @@ def get_downsampled_and_isotropic(full_res: np.ndarray, voxel_size_zyx: tuple[fl
     return scaled_image.astype(full_res.dtype)
 
 def get_isotropic_volume(full_res: np.ndarray, voxel_size_zyx: tuple[float, float, float]=(2.34, .586, .586)):
+    xp = Backend.get_xp_module()
+    sp = Backend.get_sp_module()
+    full_res = Backend.to_backend(full_res)
     z_um, y_um, _ = voxel_size_zyx
     anisotropy_factor = z_um/y_um
     aniso_down = anisotropy_factor
-    scaled_image = transform.resize(
-        full_res.astype(np.float32),
-        (round(full_res.shape[0]*aniso_down), full_res.shape[1], full_res.shape[2]),  #Explicitly specify shape
-        order=1,
-        anti_aliasing=False
-    )
-    return scaled_image.astype(full_res.dtype)
+    zoom_factors = (round(aniso_down), 1, 1)
+    scaled_image = sp.ndimage.zoom(full_res.astype(xp.float32), zoom=zoom_factors, order=1)
+    return Backend.to_numpy(scaled_image, dtype=full_res.dtype)
 
 def threshold_image_xy(volume: np.ndarray):
     max_projection = np.max(volume, axis=0)
@@ -750,8 +761,13 @@ def group_files(file_list):
         series_dict[key].setdefault(tp, []).append(f)
     return series_dict
 
-
-def process_timepoint(ill_file_paths: list, output_dir: str, timepoint: int, target_crop_shape=None, do_save_down_cropped=False, do_save_cropped_iso=False):
+def process_timepoint(ill_file_paths: list, 
+                      output_dir: str, 
+                      timepoint: int,
+                      target_crop_shape=None,
+                      do_save_thresholding_mask=True,
+                      do_save_down_cropped=True,
+                      do_save_cropped_iso=False):
     """
     Process one timepoint.
     
@@ -775,7 +791,10 @@ def process_timepoint(ill_file_paths: list, output_dir: str, timepoint: int, tar
 
     # Threshold to get mask
     mask = threshold_image_xy(merged_volume)
-    
+    if do_save_thresholding_mask:
+        mask_dir = os.path.join(output_dir, "thresholding_mask")
+        os.makedirs(mask_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(mask_dir, f"thresholding_mask_tp_{timepoint}.tif"), mask)
     # Crop around embryo. For the first timepoint, we call without target_crop_shape.
     # For subsequent timepoints, crop_around_embryo should use the provided target shape.
     if target_crop_shape is None:
@@ -826,6 +845,7 @@ def process_time_series(timeseries_key: str, timepoints_dict: dict, base_out_dir
     
     # Use tqdm to show progress for this time series
     for tp in tqdm(sorted_timepoints, desc=f"Series {timeseries_key}", unit="timepoint"):
+        print("")
         tp_files = timepoints_dict[tp]
         crop_shape = process_timepoint(tp_files, series_out_dir, tp, target_crop_shape)
         # Save crop shape from first timepoint and use for subsequent timepoints
@@ -915,7 +935,7 @@ def main():
     input_folder = args.input_folder
     output_folder = args.output_folder if args.output_folder else os.path.join(input_folder, "outs")
     os.makedirs(output_folder, exist_ok=True)
-
+    
     copy_script_with_commit_hash(output_folder)
     
     # Setup logging
@@ -939,28 +959,28 @@ def main():
      
 
     with BestBackend(device_id=device_id):
-    # Find all TIF files in the input folder
-    tif_files = [
-        os.path.join(input_folder, f)
-        for f in os.listdir(input_folder)
-        if f.lower().endswith(".tif")
-    ]
-    logging.info(f"Found {len(tif_files)} TIF files in {input_folder}")
-    if not tif_files:
-        logging.error("No TIF files found in input folder.")
-        print("No TIF files found. Exiting.")
-        return
-    
-    # Group files into time series and timepoints
-    timeseries_dict = group_files(tif_files)
-    logging.info(f"Found {len(timeseries_dict)} time series")
-    
-    # Process each time series
-    for series_key, tp_dict in timeseries_dict.items():
-        process_time_series(series_key, tp_dict, output_folder)
-    
-    logging.info("Processing complete")
-    print("Processing complete.")
+        # Find all TIF files in the input folder
+        tif_files = [
+            os.path.join(input_folder, f)
+            for f in os.listdir(input_folder)
+            if f.lower().endswith(".tif")
+        ]
+        logging.info(f"Found {len(tif_files)} TIF files in {input_folder}")
+        if not tif_files:
+            logging.error("No TIF files found in input folder.")
+            print("No TIF files found. Exiting.")
+            return
+        
+        # Group files into time series and timepoints
+        timeseries_dict = group_files(tif_files)
+        logging.info(f"Found {len(timeseries_dict)} time series")
+        
+        # Process each time series
+        for series_key, tp_dict in timeseries_dict.items():
+            process_time_series(series_key, tp_dict, output_folder)
+        
+        logging.info("Processing complete")
+        print("Processing complete.")
 
 if __name__ == "__main__":
     main()
