@@ -2,6 +2,8 @@ import datetime
 import time
 import tifffile as tiff
 import os
+import shutil
+import subprocess
 from pathlib import Path
 import re
 import argparse
@@ -830,6 +832,75 @@ def process_time_series(timeseries_key: str, timepoints_dict: dict, base_out_dir
         if target_crop_shape is None and crop_shape is not None:
             target_crop_shape = crop_shape
 
+def get_git_commit_hash(script_path):
+    """
+    Retrieves the current Git commit hash for the given script.
+
+    Args:
+        script_path:  The path to the Python script.  This is used to
+                      determine the repository's root directory.
+
+    Returns:
+        The Git commit hash as a string, or None if not in a Git repository
+        or if there's an error.
+    """
+    try:
+        # Use git rev-parse --short HEAD to get the short commit hash
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(script_path),  # Important: Run command in script's dir!
+            check=True  # Raise exception on non-zero return code
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError:
+        print("Warning: Not a git repository or git command failed.")
+        return None
+    except FileNotFoundError:
+        print("Warning: Git command not found.  Make sure Git is installed and in your PATH.")
+        return None
+    except Exception as e:
+        print(f"Warning: Could not get git commit hash: {e}")
+        return None
+
+def copy_script_with_commit_hash(output_dir):
+    """
+    Copies the script to the output directory, adding the commit hash to the filename.
+
+    Args:
+        script_path: The path to the Python script to copy.
+        output_dir: The directory to copy the script to.
+        commit_hash: Optional. The commit hash to include in the filename.
+                     If None, the script's original name is used.
+    """
+    try:
+        script_path = os.path.abspath(__file__)
+    except Exception as e:
+        print(f"Warning: could not get this script path: {e}")
+        return
+    if script_path is None:
+        print("Warning: could not get this script path.")
+        return
+    
+    script_name = os.path.basename(script_path)
+    name, ext = os.path.splitext(script_name)
+
+    commit_hash = get_git_commit_hash(script_path)
+
+    if commit_hash:
+        new_script_name = f"{name}_{commit_hash}{ext}"
+    else:
+        new_script_name = script_name
+
+    output_path = os.path.join(output_dir, new_script_name)
+
+    try:
+        shutil.copy2(script_path, output_path)  # copy2 preserves metadata
+        print(f"Script copied to: {output_path}")
+    except Exception as e:
+        print(f"Warning: could not copy source code of the script: {e}")
+
 def main():
     parser = argparse.ArgumentParser(
         description="Process a folder of 3D embryo TIF images: group them into time series, "
@@ -844,6 +915,8 @@ def main():
     input_folder = args.input_folder
     output_folder = args.output_folder if args.output_folder else os.path.join(input_folder, "outs")
     os.makedirs(output_folder, exist_ok=True)
+
+    copy_script_with_commit_hash(output_folder)
     
     # Setup logging
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
