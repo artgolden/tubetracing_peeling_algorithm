@@ -18,7 +18,7 @@ from skimage import transform
 import cv2
 from vedo import Points, ConvexHull, Volume
 from dexp.utils import xpArray
-from dexp.utils.backends import Backend, BestBackend, NumpyBackend
+from dexp.utils.backends import Backend, BestBackend, CupyBackend
 import importlib
 from scipy import ndimage as cpu_ndimage
 from numba import njit
@@ -929,6 +929,16 @@ def main():
     logging.info("Starting processing of time series")
     print("Starting processing...")
     
+    device_id = 0
+    devices = CupyBackend.available_devices("memory")
+    if len(devices) == 0:
+        logging.error("Could not find available CUDA devices.")
+    else:
+        device_id = devices[0]
+        logging.info(f"Using CUDA device: {device_id}")
+     
+
+    with BestBackend(device_id=device_id):
     # Find all TIF files in the input folder
     tif_files = [
         os.path.join(input_folder, f)
