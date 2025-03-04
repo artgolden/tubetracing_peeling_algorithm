@@ -15,6 +15,7 @@ from skimage import measure
 from skimage import filters
 from skimage import morphology
 from skimage import transform
+from skimage import draw
 import cv2
 from vedo import Points, ConvexHull, Volume
 from dexp.utils import xpArray
@@ -92,6 +93,31 @@ def crop_rotated_3d(image, center, size, rotation_matrix):
     
     return cropped_region
 
+def get_matrix_with_circle(radius, shape=None, center=None):
+    """
+    Creates a NumPy array with a filled circle of 1s, using skimage.draw.disk.
+
+    Args:
+        radius (int): The radius of the circle.
+        shape (tuple of ints): The shape of the 2D array (rows, cols). Default square of radius*2+1.
+        center (tuple of ints, optional): The center of the circle (row, col).
+                                            If None, defaults to the center of the array.
+
+    Returns:
+        numpy.ndarray: A NumPy array representing the circle.
+    """
+    if shape is None:
+        shape = (radius * 2 + 1, radius * 2 + 1)
+    img = np.zeros(shape, dtype=np.uint8)
+
+    if center is None:
+        center = (shape[0] // 2, shape[1] // 2)  # Integer division for center
+
+    rr, cc = draw.disk(center, radius, shape=shape) # Get circle indices within bounds
+    img[rr, cc] = 1
+
+    return img
+
 def crop_around_embryo(image_3d, mask, target_crop_shape=None) -> Optional[np.ndarray]:
     """
     Detects the largest object in a boolean image mask, fits an ellipse (RotatedRect),
@@ -114,8 +140,6 @@ def crop_around_embryo(image_3d, mask, target_crop_shape=None) -> Optional[np.nd
         raise ValueError("Input 'mask' must be a 2D array (grayscale).")
     if image_3d.shape[1] != mask.shape[0] or image_3d.shape[2] != mask.shape[1]:
         raise ValueError("The dimensions of 'image_3d' (Y, X) must match the dimensions of 'mask'.")
-
-
 
     # Convert boolean mask to uint8 - necessary for OpenCV
     binary_image = mask.astype(np.uint8) * 255
@@ -639,7 +663,6 @@ def detect_embryo_surface_wbns(volume: np.ndarray):
 
     return np.transpose(np.where(eroded_mask))
 
-
 def peel_embryo_with_cartography(full_res_zyx: np.ndarray, 
                                  downsampled_zyx: np.ndarray, 
                                  output_dir:str, 
@@ -717,7 +740,6 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         os.makedirs(cartography_dir, exist_ok=True)
         cartography_file = os.path.join(cartography_dir, f"tp_{timepoint}_cyl_proj.tif")
         tiff.imwrite(cartography_file, projection_cpu)
-        
 
 def load_and_merge_illuminations(ill_file_paths: list[str]):
     images = [load_3d_volume(f) for f in ill_file_paths]
@@ -762,7 +784,13 @@ def threshold_image_xy(volume: np.ndarray):
     img_median = filters.median(max_projection, morphology.disk(5)) # TODO: need to replace with something based on pixel size in um
 
     th = filters.threshold_triangle(img_median)
-    return img_median >= th
+    mask = img_median >= th
+
+    # Clean up the mask
+    cleaning_circle_radius = round(mask.shape[1] * 0.014)
+    structuring_element = get_matrix_with_circle(cleaning_circle_radius)
+    mask = cpu_ndimage.binary_opening(mask, structure=structuring_element, iterations=5).astype(mask.dtype)
+    return mask
 
 def parse_filename(filepath: str):
     """

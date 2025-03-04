@@ -41,8 +41,8 @@ Current TODO:
   - Expose most parameters as cli arguments, including image file name mask for general use by other people
 + Add proper logging, printing of finished operations per image and progress bar
 - check documentation for functions
-- add several rounds of erosion and dilation after creating embryo mask to remove dirt
-- project thresholded embryo mask outline to create points at Z=max for convexHull to extend to volume border
++ add several rounds of erosion and dilation after creating embryo mask to remove dirt
+- Fix upscaled volume mask does not extend to max Z
 
 
 
