@@ -460,7 +460,7 @@ def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=
     Converts a set of 3D points to a binary volume mask of the inner part of the embryo using a convex hull.
 
     This function takes a set of 3D points and a volume shape, constructs a convex hull from the points,
-    binarizes the convex hull into a volume mask, and then dilates the mask. 
+    binarizes the convex hull into a volume mask, and then erodes/dilates the mask. 
 
     Args:
         points (numpy.ndarray): A numpy array of shape (N, 3) representing the 3D points in ZYX order.
@@ -470,16 +470,20 @@ def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=
 
     Returns:
         vedo.Volume: A vedo.Volume object representing the binary volume mask.  The mask has values of 255 inside
-            the dilated convex hull and 0 outside.
+            the convex hull and 0 outside.
     """
     points_raw = points[:, [2, 1, 0]]
     pts = Points(points_raw)
-    hull = ConvexHull(pts).alpha(0.2)
+    hull = ConvexHull(pts)
 
     vol_shape_xyz = volume_shape_zyx[::-1]
     vol_mask = hull.binarize(values=(255,0),dims=vol_shape_xyz,spacing=[1,1,1], origin=(0,0,0))
-    dilated = vol_mask.clone().dilate(neighbours=(dilation_radius,dilation_radius,dilation_radius))
-    return dilated
+    if dilation_radius > 0:
+        modified = vol_mask.clone().dilate(neighbours=(dilation_radius,dilation_radius,dilation_radius))
+    else:
+        erosion_radius = abs(dilation_radius)
+        modified = vol_mask.clone().erode(neighbours=(erosion_radius,erosion_radius,erosion_radius))
+    return modified
 
 def substract_mask_from_embryo_volume(volume_zyx: np.ndarray, mask_xyz) -> np.ndarray:
     """
@@ -598,10 +602,49 @@ def get_origin(volume) -> tuple[int, int, int]:
     origin_x = volume.shape[2] // 2  # Middle of X
     return origin_z, origin_y, origin_x
 
+def detect_embryo_surface_tubetracing(volume: np.ndarray) -> np.ndarray:
+    origin = get_origin(volume)
+    bkg_std = find_background_std(volume)
+
+    phi_max = np.pi / 2
+    polar_volume = cartesian_to_polar(volume, origin, phi_max = phi_max)
+    signals = raytracing_in_polar(Backend.to_numpy(polar_volume), bkg_std, tubetracing_density="sparse")
+    # filtered_signals = filter_high_rho_outliers(signals)
+    points = export_signal_points(signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
+    return points
+
+def detect_embryo_surface_wbns(volume: np.ndarray):
+    """
+    Detect points of the embryo surface by using WBNS wavelet based background substraction then thresholding and eroding the mask. 
+    This leaves sparse points on the embryo outline.
+    """
+    from wbns import substract_background
+    from skimage import filters
+
+    volume = Backend.to_numpy(volume)
+
+    substracted_bkg = substract_background(volume, 4, 1)
+    th = filters.threshold_otsu(substracted_bkg)
+    mask = substracted_bkg >= th
+
+    structuring_element = np.ones((3,3,3))
+    eroded_mask = cpu_ndimage.binary_erosion(mask, structure=structuring_element).astype(mask.dtype)  # Keep original datatype
+    # Zerroing out the border to remove artifacts that wbns generates
+    zero_y = int(eroded_mask.shape[1] * (RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO - 1) / 2) 
+    zero_x = int(eroded_mask.shape[2] * (RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO - 1) / 2)
+    eroded_mask[:,-zero_y:,:] = False
+    eroded_mask[:,:zero_y,:] = False
+    eroded_mask[:,:,-zero_x:] = False
+    eroded_mask[:,:,:zero_x] = False
+
+    return np.transpose(np.where(eroded_mask))
+
+
 def peel_embryo_with_cartography(full_res_zyx: np.ndarray, 
                                  downsampled_zyx: np.ndarray, 
                                  output_dir:str, 
                                  timepoint:int,
+                                 surface_detection_mode:str = "wbns",
                                  do_cylindrical_cartography=True,
                                  do_save_points=True, 
                                  do_save_peeled_volume=True,
@@ -612,23 +655,23 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
 
     xp = Backend.get_xp_module()
     sp = Backend.get_sp_module()
-    volume = Backend.to_backend(downsampled_zyx)
-    volume = volume[::-1, :, :]
 
-    
-    origin = get_origin(volume)
-    phi_max = np.pi / 2
+    volume_mask_dilation_radius = 3
+    match surface_detection_mode:
+        case "tubetracing":
+            downsampled_zyx = Backend.to_backend(downsampled_zyx)
+            downsampled_zyx = downsampled_zyx[::-1, :, :]
+            logging.info("Peeling: Using tubetracing")
+            volume_mask_dilation_radius = 3
+            points = detect_embryo_surface_tubetracing(downsampled_zyx)
+        case "wbns":
+            logging.info("Peeling: Using WBNS wavelet based background substraction for detecting only embryo structures.")
+            volume_mask_dilation_radius = -12
+            points = detect_embryo_surface_wbns(downsampled_zyx)
 
-    bkg_std = find_background_std(volume)
 
-    # Tubetracing, get surface point cloud
-    logging.info("Peeling: Starting tubetracing")
-    polar_volume = cartesian_to_polar(volume, origin, phi_max = phi_max)
-    signals = raytracing_in_polar(Backend.to_numpy(polar_volume), bkg_std, tubetracing_density="sparse")
-    # filtered_signals = filter_high_rho_outliers(signals)
-    points = export_signal_points(signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
     print(f"Number of detected points: {len(points)}")
-    points = add_projected_embryo_outline_points(volume.shape, points)
+    points = add_projected_embryo_outline_points(downsampled_zyx.shape, points)
     if do_save_points:
         points_dir = os.path.join(output_dir, "surface_points")
         os.makedirs(points_dir, exist_ok=True)
@@ -636,12 +679,13 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
 
     # Create a volume mask from the points
     logging.info("Peeling: Converting points to mask")
-    mask = points_to_convex_hull_volume_mask(points, volume.shape, dilation_radius=3)
+    mask = points_to_convex_hull_volume_mask(points, downsampled_zyx.shape, dilation_radius=volume_mask_dilation_radius)
     mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
     mask_upscaled = upscale_mask(mask_np, full_res_zyx.shape)
     if do_save_mask:
         mask_dir = os.path.join(output_dir, "substraction_embryo_mask")
         os.makedirs(mask_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(mask_dir, f"tp_{timepoint}_mask.tif"), mask_np)
         np.save(os.path.join(mask_dir, f"tp_{timepoint}_upscaled_mask.npy"), mask_upscaled)
 
     # Subtract the mask from the embryo volume
