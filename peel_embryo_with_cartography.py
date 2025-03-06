@@ -673,6 +673,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                  timepoint:int,
                                  surface_detection_mode:str = "wbns",
                                  do_cylindrical_cartography=True,
+                                 prune_voxels_after_wbns=True,
                                  do_save_points=True, 
                                  do_save_peeled_volume=True,
                                  do_save_z_max_projection=True,
@@ -696,6 +697,10 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
             logging.info("Peeling: Using WBNS wavelet based background substraction for detecting only embryo structures.")
             volume_mask_dilation_radius = -12
             sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx)
+            if prune_voxels_after_wbns:
+                from prune_volume import prune_volume
+                logging.info("Pruining volume after WBNS")
+                sparce_voxels_on_embryo_surface = prune_volume(sparce_voxels_on_embryo_surface)
             points = np.transpose(np.where(sparce_voxels_on_embryo_surface))
             if do_save_wbns_output:
                 output_dir_wbns = os.path.join(output_dir, "wbns_output")
