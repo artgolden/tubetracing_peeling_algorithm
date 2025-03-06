@@ -28,6 +28,10 @@ from typing import Optional
 DEBUG_MODE = True
 RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO = 1.15
 
+def logging_broadcast(message):
+    logging.info(message)
+    print(message)
+
 def load_3d_volume(file_path):
     """
     Loads a 3D volume from a TIFF file using the tifffile library.
@@ -1054,7 +1058,9 @@ def main():
     parser.add_argument("--output_folder", type=str, default=None, 
                         help="Output folder (default: <input_folder>/outs)")
     parser.add_argument("--log_level", type=str, default="INFO", help="Logging level (DEBUG, INFO, etc.)")
-    parser.add_argument("--reuse_peeling", action="store_true", help="Reuse embryo peeling mask from the first timepoint in time ser")
+    parser.add_argument("--reuse_peeling", action="store_true", help="Reuse embryo peeling mask from the first timepoint in time series.")
+    parser.add_argument("--skip_patterns", type=str, nargs='*', default=[], 
+                        help="List of patterns; time series whose keys contain any of these will be skipped.")
     args = parser.parse_args()
     
     input_folder = args.input_folder
@@ -1107,6 +1113,9 @@ def main():
         
         # Process each time series
         for series_key, tp_dict in timeseries_dict.items():
+            if any(pattern in series_key for pattern in args.skip_patterns):
+                logging_broadcast(f"Skipping time series '{series_key}' due to matching skip pattern {args.skip_patterns}")
+                continue
             process_time_series(series_key, tp_dict, output_folder, compute_backend, args.reuse_peeling)
         
         logging.info("Processing complete")
