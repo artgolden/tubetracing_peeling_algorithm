@@ -246,7 +246,6 @@ def cartesian_to_polar(volume: xpArray, origin, rho_res=1, theta_res=360, phi_re
     polar_volume = interpolate.interpn(
         points, volume, xi, method="linear", bounds_error=False, fill_value=0
     )
-
     return polar_volume
 
 def find_background_std(volume: xpArray) -> float:
@@ -498,14 +497,18 @@ def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=
     """
     points_raw = points[:, [2, 1, 0]]
     pts = Points(points_raw)
+    logging.debug("Creating convex hull from points")
     hull = ConvexHull(pts)
 
     vol_shape_xyz = volume_shape_zyx[::-1]
+    logging.debug("Binarizing convex hull into volume mask")
     vol_mask = hull.binarize(values=(255,0),dims=vol_shape_xyz,spacing=[1,1,1], origin=(0,0,0))
     if dilation_radius > 0:
+        logging.debug(f"Dilating with radius of {dilation_radius}")
         modified = vol_mask.clone().dilate(neighbours=(dilation_radius,dilation_radius,dilation_radius))
     else:
         erosion_radius = abs(dilation_radius)
+        logging.debug(f"Eroding with erosion radius of {erosion_radius}")
         modified = vol_mask.clone().erode(neighbours=(erosion_radius,erosion_radius,erosion_radius))
     return modified
 
@@ -646,10 +649,11 @@ def detect_embryo_surface_wbns(volume: np.ndarray):
     from skimage import filters
 
     volume = Backend.to_numpy(volume)
-
+    volume = np.transpose(volume, (2,1,0))
     substracted_bkg = substract_background(volume, 4, 1)
-    th = filters.threshold_otsu(substracted_bkg)
+    th = filters.threshold_mean(substracted_bkg)
     mask = substracted_bkg >= th
+    mask = np.transpose(mask, (2,1,0))
 
     structuring_element = np.ones((3,3,3))
     eroded_mask = cpu_ndimage.binary_erosion(mask, structure=structuring_element).astype(mask.dtype)  # Keep original datatype
@@ -661,7 +665,7 @@ def detect_embryo_surface_wbns(volume: np.ndarray):
     eroded_mask[:,:,-zero_x:] = False
     eroded_mask[:,:,:zero_x] = False
 
-    return np.transpose(np.where(eroded_mask))
+    return (eroded_mask, substracted_bkg)
 
 def peel_embryo_with_cartography(full_res_zyx: np.ndarray, 
                                  downsampled_zyx: np.ndarray, 
@@ -672,7 +676,8 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                  do_save_points=True, 
                                  do_save_peeled_volume=True,
                                  do_save_z_max_projection=True,
-                                 do_save_mask=True) -> None:
+                                 do_save_mask=True,
+                                 do_save_wbns_output=True) -> bool:
     logging.info("Starting peel_embryo_with_cartography")
     
 
@@ -690,10 +695,24 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         case "wbns":
             logging.info("Peeling: Using WBNS wavelet based background substraction for detecting only embryo structures.")
             volume_mask_dilation_radius = -12
-            points = detect_embryo_surface_wbns(downsampled_zyx)
-
+            sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx)
+            points = np.transpose(np.where(sparce_voxels_on_embryo_surface))
+            if do_save_wbns_output:
+                output_dir_wbns = os.path.join(output_dir, "wbns_output")
+                os.makedirs(output_dir_wbns, exist_ok=True)
+                tiff.imwrite(os.path.join(output_dir_wbns, f"tp_{timepoint}_wbns_background_removed.tif"), only_structures_wbns)
+            if do_save_points:
+                points_dir = os.path.join(output_dir, "surface_voxels_mask")
+                os.makedirs(points_dir, exist_ok=True)
+                tiff.imwrite(os.path.join(points_dir, f"tp_{timepoint}_wbns_surface_voxels_true.tif"), sparce_voxels_on_embryo_surface)
+                do_save_points = False
 
     print(f"Number of detected points: {len(points)}")
+    logging.debug(f"Number of detected points: {len(points)}")
+    if len(points) > 300000:
+        logging.error("Too many points detected. This is likely due to a bad surface segmentation. Embryo peeling failed.")
+        return False
+
     points = add_projected_embryo_outline_points(downsampled_zyx.shape, points)
     if do_save_points:
         points_dir = os.path.join(output_dir, "surface_points")
@@ -703,9 +722,12 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
     # Create a volume mask from the points
     logging.info("Peeling: Converting points to mask")
     mask = points_to_convex_hull_volume_mask(points, downsampled_zyx.shape, dilation_radius=volume_mask_dilation_radius)
+    logging.debug(f"Mask shape: {mask.shape}, converting mask to numpy and transposing.")
     mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
+    logging.debug(f"Upscaling mask")
     mask_upscaled = upscale_mask(mask_np, full_res_zyx.shape)
     if do_save_mask:
+        logging.debug(f"Saving masks to disk")
         mask_dir = os.path.join(output_dir, "substraction_embryo_mask")
         os.makedirs(mask_dir, exist_ok=True)
         tiff.imwrite(os.path.join(mask_dir, f"tp_{timepoint}_mask.tif"), mask_np)
@@ -740,6 +762,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         os.makedirs(cartography_dir, exist_ok=True)
         cartography_file = os.path.join(cartography_dir, f"tp_{timepoint}_cyl_proj.tif")
         tiff.imwrite(cartography_file, projection_cpu)
+    return True
 
 def load_and_merge_illuminations(ill_file_paths: list[str]):
     images = [load_3d_volume(f) for f in ill_file_paths]
@@ -826,7 +849,7 @@ def group_files(file_list):
         try:
             key, tp, ill = parse_filename(f)
         except ValueError as e:
-            logging.warning(str(e))
+            logging.warning(f"Failed to parse filename {f}: {e}")
             continue
         if key not in series_dict:
             series_dict[key] = {}
@@ -836,6 +859,7 @@ def group_files(file_list):
 def process_timepoint(ill_file_paths: list, 
                       output_dir: str, 
                       timepoint: int,
+                      compute_backend: Backend,
                       target_crop_shape=None,
                       do_save_thresholding_mask=True,
                       do_save_down_cropped=True,
@@ -877,8 +901,9 @@ def process_timepoint(ill_file_paths: list,
     if cropped_volume is None:
         logging.error(f"Error segmenting and cropping around embryo for files: {ill_file_paths}")
         return None
-    logging.info(f"TP: {timepoint} Cropped volume shape: {cropped_volume.shape}")
-    print(f"TP: {timepoint} Cropped volume shape: {cropped_volume.shape}")
+    cropped_vol_shape = cropped_volume.shape   
+    logging.info(f"TP: {timepoint} Cropped volume shape: {cropped_vol_shape}")
+    print(f"TP: {timepoint} Cropped volume shape: {cropped_vol_shape}")
     
     down_cropped = get_downsampled_and_isotropic(cropped_volume)
     if do_save_down_cropped:
@@ -893,11 +918,15 @@ def process_timepoint(ill_file_paths: list,
         tiff.imwrite(os.path.join(iso_dir, f"cropped_isotropic_tp_{timepoint}.npy"), full_res_iso)
     
 
-    peel_embryo_with_cartography(full_res_iso, down_cropped, output_dir, timepoint)
-    
-    return cropped_volume.shape
+    peel_success = peel_embryo_with_cartography(full_res_iso, down_cropped, output_dir, timepoint)
+    if not peel_success:
+        logging.error(f"Error peeling embryo. Aborting processing this timepoint")
+        compute_backend.clear_memory_pool()
+        return None
+    compute_backend.clear_memory_pool()
+    return cropped_vol_shape
 
-def process_time_series(timeseries_key: str, timepoints_dict: dict, base_out_dir: str):
+def process_time_series(timeseries_key: str, timepoints_dict: dict, base_out_dir: str, compute_backend: Backend):
     """
     Process a single time series.
     
@@ -919,7 +948,10 @@ def process_time_series(timeseries_key: str, timepoints_dict: dict, base_out_dir
     for tp in tqdm(sorted_timepoints, desc=f"Series {timeseries_key}", unit="timepoint"):
         print("")
         tp_files = timepoints_dict[tp]
-        crop_shape = process_timepoint(tp_files, series_out_dir, tp, target_crop_shape)
+        crop_shape = process_timepoint(tp_files, series_out_dir, tp, compute_backend, target_crop_shape)
+        if crop_shape is None:
+            logging.error(f"Error processing timepoint {tp}. Aborting processing this time series")
+            return
         # Save crop shape from first timepoint and use for subsequent timepoints
         if target_crop_shape is None and crop_shape is not None:
             target_crop_shape = crop_shape
@@ -1015,7 +1047,7 @@ def main():
     log_file = os.path.join(output_folder, f"process_{timestamp}.log")
     logging.basicConfig(
         filename=log_file,
-        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        level=getattr(logging, args.log_level.upper(), logging.DEBUG),
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
     logging.info("Starting processing of time series")
@@ -1030,7 +1062,7 @@ def main():
         logging.info(f"Using CUDA device: {device_id}")
      
 
-    with BestBackend(device_id=device_id):
+    with BestBackend(device_id=device_id) as compute_backend:
         # Find all TIF files in the input folder
         tif_files = [
             os.path.join(input_folder, f)
@@ -1049,7 +1081,7 @@ def main():
         
         # Process each time series
         for series_key, tp_dict in timeseries_dict.items():
-            process_time_series(series_key, tp_dict, output_folder)
+            process_time_series(series_key, tp_dict, output_folder, compute_backend)
         
         logging.info("Processing complete")
         print("Processing complete.")

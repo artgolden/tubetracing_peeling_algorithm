@@ -43,6 +43,12 @@ Current TODO:
 - check documentation for functions
 + add several rounds of erosion and dilation after creating embryo mask to remove dirt
 - Fix upscaled volume mask does not extend to max Z
+- Remove unnecessary imports when activating BestBackend
+- Periodically, especially within loops or after large operations, explicitly free all blocks in CuPy's memory pool. This reduces memory fragmentation and should remove out-of-memory (OOM) errors.
+- Add potential chunking of xi arrays when doing interpolation and gpu memory cleanup after each.
+- Add timestapmt to saved source code file
++ !!! Change thresholding for structure detection with wbns to "mean", save images from wbns for debugging to disk, add failsafe for the number of points detected, add more info to logging about image parameters and number of points detected
+- Add argument to skip a series containing pattern in the TIF file name
 
 
 
