@@ -19,7 +19,7 @@ from skimage import draw
 import cv2
 from vedo import Points, ConvexHull, Volume
 from dexp.utils import xpArray
-from dexp.utils.backends import Backend, BestBackend, CupyBackend
+from dexp.utils.backends import Backend, BestBackend, CupyBackend, NumpyBackend
 import importlib
 from scipy import ndimage as cpu_ndimage
 from numba import njit
@@ -1062,6 +1062,7 @@ def main():
                         help="Output folder (default: <input_folder>/outs)")
     parser.add_argument("--log_level", type=str, default="INFO", help="Logging level (DEBUG, INFO, etc.)")
     parser.add_argument("--reuse_peeling", action="store_true", help="Reuse embryo peeling mask from the first timepoint in time series.")
+    parser.add_argument("--force_cpu", action="store_true", help="Force execution on CPU only.")
     parser.add_argument("--skip_patterns", type=str, nargs='*', default=[], 
                         help="List of patterns; time series whose keys contain any of these will be skipped.")
     args = parser.parse_args()
@@ -1089,10 +1090,13 @@ def main():
         logging.error("Could not find available CUDA devices.")
     else:
         device_id = devices[0]
-        logging.info(f"Using CUDA device: {device_id}")
+        logging_broadcast(f"Using CUDA device: {device_id}")
+
+    if args.force_cpu:
+        logging_broadcast("--force_cpu argument is set: Forcing execution only on CPU.")
      
 
-    with BestBackend(device_id=device_id) as compute_backend:
+    with (NumpyBackend() if args.force_cpu else BestBackend(device_id=device_id)) as compute_backend:
         # Find all TIF files in the input folder
         tif_files = [
             os.path.join(input_folder, f)
