@@ -49,6 +49,7 @@ Current TODO:
 - Add timestapmt to saved source code file
 + !!! Change thresholding for structure detection with wbns to "mean", save images from wbns for debugging to disk, add failsafe for the number of points detected, add more info to logging about image parameters and number of points detected
 - Add argument to skip a series containing pattern in the TIF file name
+- !! cartography projection can sometimes introduce stretching of the projection in vertical direction for one timepoint. Need to fix.
 
 
 

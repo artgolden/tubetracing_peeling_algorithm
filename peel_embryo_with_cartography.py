@@ -1,16 +1,16 @@
 import datetime
-import time
+import warnings
 import tifffile as tiff
 import os
 import shutil
 import subprocess
-from pathlib import Path
 import re
 import argparse
 import logging
+import contextlib
+import io
 from tqdm import tqdm
 import numpy as np
-import json
 from skimage import measure
 from skimage import filters
 from skimage import morphology
@@ -733,6 +733,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         # Create a volume mask from the points
         logging.info("Peeling: Converting points to mask")
         mask = points_to_convex_hull_volume_mask(points, downsampled_zyx.shape, dilation_radius=volume_mask_dilation_radius)
+
         logging.debug(f"Mask shape: {mask.shape}, converting mask to numpy and transposing.")
         mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
         logging.debug(f"Upscaling mask")
@@ -932,7 +933,9 @@ def process_timepoint(ill_file_paths: list,
         logging.error(f"Error peeling embryo. Aborting processing this timepoint")
         compute_backend.clear_memory_pool()
         return None, None
-    compute_backend.clear_memory_pool()
+    with contextlib.redirect_stdout(io.StringIO()) as captured_output:
+        compute_backend.clear_memory_pool()
+    logging.info(captured_output.getvalue())
     return cropped_vol_shape, peeling_mask_curr_tp
 
 def process_time_series(timeseries_key: str, 
