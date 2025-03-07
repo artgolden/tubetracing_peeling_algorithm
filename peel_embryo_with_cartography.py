@@ -616,7 +616,6 @@ def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, 
     
     # Compute the maximum intensity projection along the radial (r) axis.
     projection = xp.max(cylindrical_volume, axis=0)
-    print("Projection shape:", projection.shape)
     
     return projection[::-1,:]
 
@@ -645,7 +644,7 @@ def detect_embryo_surface_tubetracing(volume: np.ndarray) -> np.ndarray:
     points = export_signal_points(signals, origin, polar_volume.shape[0], polar_volume.shape[1], volume.shape, phi_max)
     return points
 
-def detect_embryo_surface_wbns(volume: np.ndarray):
+def detect_embryo_surface_wbns(volume: np.ndarray, threshold: str=None):
     """
     Detect points of the embryo surface by using WBNS wavelet based background substraction then thresholding and eroding the mask. 
     This leaves sparse points on the embryo outline.
@@ -656,7 +655,27 @@ def detect_embryo_surface_wbns(volume: np.ndarray):
     volume = Backend.to_numpy(volume)
     volume = np.transpose(volume, (2,1,0))
     substracted_bkg = substract_background(volume, 4, 1)
-    th = filters.threshold_mean(substracted_bkg)
+    if threshold is None:
+        threshold = "isodata"
+    match threshold:
+        case "otsu":
+            th = filters.threshold_otsu(substracted_bkg)
+        case "yen":
+            th = filters.threshold_yen(substracted_bkg)
+        case "li":
+            th = filters.threshold_li(substracted_bkg)
+        case "isodata":
+            th = filters.threshold_isodata(substracted_bkg)
+        case "minimum":
+            th = filters.threshold_minimum(substracted_bkg)
+        case "yen":
+            th = filters.threshold_yen(substracted_bkg)
+        case "triangle":
+            th = filters.threshold_triangle(substracted_bkg)
+        case "mean":
+            th = filters.threshold_mean(substracted_bkg)
+        case "sauvola":
+            th = filters.threshold_sauvola(substracted_bkg)
     mask = substracted_bkg >= th
     mask = np.transpose(mask, (2,1,0))
 
@@ -678,6 +697,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                  timepoint:int,
                                  peeling_mask: np.ndarray=None,
                                  surface_detection_mode:str = "wbns",
+                                 thresholding_after_wbns:str = None,
                                  do_cylindrical_cartography=True,
                                  prune_voxels_after_wbns=True,
                                  remove_outliers_after_wbns=True,
@@ -704,7 +724,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
             case "wbns":
                 logging.info("Peeling: Using WBNS wavelet based background substraction for detecting only embryo structures.")
                 volume_mask_dilation_radius = -12
-                sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx)
+                sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx, threshold=thresholding_after_wbns)
                 if prune_voxels_after_wbns:
                     from prune_volume import prune_volume
                     logging.info("Pruining volume after WBNS")
@@ -885,6 +905,7 @@ def process_timepoint(ill_file_paths: list,
                       compute_backend: Backend,
                       target_crop_shape=None,
                       peeling_mask=None,
+                      thresholding_after_wbns=None,
                       do_save_thresholding_mask=True,
                       do_save_down_cropped=True,
                       do_save_cropped_iso=False):
@@ -922,20 +943,21 @@ def process_timepoint(ill_file_paths: list,
     if do_save_down_cropped:
         down_dir = os.path.join(output_dir, "downsampled_cropped")
         os.makedirs(down_dir, exist_ok=True)
-        np.save(os.path.join(down_dir, f"down_cropped_tp_{timepoint}.npy"), down_cropped)
+        tiff.imwrite(os.path.join(down_dir, f"down_cropped_tp_{timepoint}.tif"), down_cropped)
     
     full_res_iso = get_isotropic_volume(cropped_volume)
     if do_save_cropped_iso:
         iso_dir = os.path.join(output_dir, "cropped_isotropic_embryo")
         os.makedirs(iso_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(iso_dir, f"cropped_isotropic_tp_{timepoint}.npy"), full_res_iso)
+        tiff.imwrite(os.path.join(iso_dir, f"cropped_isotropic_tp_{timepoint}.tif"), full_res_iso)
     
 
     peel_success, peeling_mask_curr_tp = peel_embryo_with_cartography(full_res_iso, 
                                                               down_cropped, 
                                                               output_dir, 
                                                               timepoint, 
-                                                              peeling_mask=peeling_mask)
+                                                              peeling_mask=peeling_mask,
+                                                              thresholding_after_wbns=thresholding_after_wbns)
     if not peel_success:
         logging.error(f"Error peeling embryo. Aborting processing this timepoint")
         compute_backend.clear_memory_pool()
@@ -949,7 +971,8 @@ def process_time_series(timeseries_key: str,
                         timepoints_dict: dict, 
                         base_out_dir: str, 
                         compute_backend: Backend,
-                        reuse_peeling_mask: bool):
+                        reuse_peeling_mask: bool,
+                        thresholding_after_wbns=None):
     """
     Process a single time series.
     
@@ -978,7 +1001,8 @@ def process_time_series(timeseries_key: str,
                                                              tp, 
                                                              compute_backend, 
                                                              target_crop_shape=target_crop_shape, 
-                                                             peeling_mask=peeling_mask_whole_series)
+                                                             peeling_mask=peeling_mask_whole_series,
+                                                             thresholding_after_wbns=thresholding_after_wbns)
         if crop_shape is None:
             logging.error(f"Error processing timepoint {tp}. Aborting processing this time series")
             return
@@ -1068,6 +1092,7 @@ def main():
     parser.add_argument("--output_folder", type=str, default=None, 
                         help="Output folder (default: <input_folder>/outs)")
     parser.add_argument("--log_level", type=str, default="INFO", help="Logging level (DEBUG, INFO, etc.)")
+    parser.add_argument("--wbns_threshold", type=str, default=None, help="Thresholding method used after WBNS structure detection. Options: 'otsu', 'yen', 'li', 'isodata', 'minimum', 'yen', 'triangle', 'mean', 'sauvola'.")
     parser.add_argument("--reuse_peeling", action="store_true", help="Reuse embryo peeling mask from the first timepoint in time series.")
     parser.add_argument("--force_cpu", action="store_true", help="Force execution on CPU only.")
     parser.add_argument("--skip_patterns", type=str, nargs='*', default=[], 
@@ -1130,7 +1155,7 @@ def main():
             if any(pattern in series_key for pattern in args.skip_patterns):
                 logging_broadcast(f"Skipping time series '{series_key}' due to matching skip pattern {args.skip_patterns}")
                 continue
-            process_time_series(series_key, tp_dict, output_folder, compute_backend, args.reuse_peeling)
+            process_time_series(series_key, tp_dict, output_folder, compute_backend, args.reuse_peeling, args.wbns_threshold)
         
         logging.info("Processing complete")
         print("Processing complete.")
