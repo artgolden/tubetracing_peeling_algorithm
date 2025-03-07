@@ -48,8 +48,9 @@ Current TODO:
 - Add potential chunking of xi arrays when doing interpolation and gpu memory cleanup after each.
 - Add timestapmt to saved source code file
 + !!! Change thresholding for structure detection with wbns to "mean", save images from wbns for debugging to disk, add failsafe for the number of points detected, add more info to logging about image parameters and number of points detected
-- Add argument to skip a series containing pattern in the TIF file name
++ Add argument to skip a series containing pattern in the TIF file name
 - !! cartography projection can sometimes introduce stretching of the projection in vertical direction for one timepoint. Need to fix.
++ Need to implement dirt detection filtering by checking each point and radius 4 around it, if removing all points in this radius makes the convex hull significantly smaller/change shape, then remove the point. Or if all other close points are much closer to embryo center that that point. Convex hull is sequential and expensive algorithm, so it would not work to recalculate it many many times.
 
 
 

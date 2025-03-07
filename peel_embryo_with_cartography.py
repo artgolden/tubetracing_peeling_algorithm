@@ -680,6 +680,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                  surface_detection_mode:str = "wbns",
                                  do_cylindrical_cartography=True,
                                  prune_voxels_after_wbns=True,
+                                 remove_outliers_after_wbns=True,
                                  do_save_points=True, 
                                  do_save_peeled_volume=True,
                                  do_save_z_max_projection=True,
@@ -708,6 +709,10 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                     from prune_volume import prune_volume
                     logging.info("Pruining volume after WBNS")
                     sparce_voxels_on_embryo_surface = prune_volume(sparce_voxels_on_embryo_surface)
+                if remove_outliers_after_wbns:
+                    from remove_outliers_volume_mask import remove_outliers
+                    logging.info("Removing outliers (expected dirt) after WBNS")
+                    sparce_voxels_on_embryo_surface = remove_outliers(sparce_voxels_on_embryo_surface)
                 points = np.transpose(np.where(sparce_voxels_on_embryo_surface))
                 if do_save_wbns_output:
                     output_dir_wbns = os.path.join(output_dir, "wbns_output")
@@ -772,6 +777,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         y_crop = int(y_size - y_size * reduce_ratio) // 2
         peeled_volume = Backend.to_backend(peeled_volume, dtype=xp.float16)[::-1,:,:]
         peeled_volume = peeled_volume[:, y_crop:-y_crop, x_crop:-x_crop]
+        logging.debug(f"Peeled volume origin coordinates: {get_origin(peeled_volume)}, x and y crop: {x_crop}, {y_crop}, shape: {peeled_volume.shape}")
         cylindrical_projection = cylindrical_cartography_projection(peeled_volume, get_origin(peeled_volume))
         projection_cpu = Backend.to_numpy(cylindrical_projection, dtype=np.uint8)
 
