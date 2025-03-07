@@ -541,7 +541,8 @@ def substract_mask_from_embryo_volume(volume_zyx: np.ndarray, mask_xyz) -> np.nd
     diff = embryo.clone().operation("*",mask_xyz)
     return diff.tonumpy()
 
-def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, int], num_r=None, num_theta=None, num_z=None, exclude_poles_from_cyl_projection=True) -> np.ndarray:
+def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, int], num_r=None, num_theta=None, num_z=None, 
+                                       reduce_r_sampling_in_cylindrical_coords=True) -> np.ndarray:
     """
     Converts the embryo volume to cylindrical coordinates with the cylinder axis
     parallel to the original image's X axis. The cylindrical coordinate system is centered at
@@ -571,20 +572,20 @@ def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, 
 
     # Determine the maximum radius as half the size of the original y-dimension.
     orig_img_y_max = volume.shape[1]
-    max_r = orig_img_y_max / 2.0 * 1.15
-
+    max_r = round(orig_img_y_max / 2.0 * 1.15)
     # Set default sampling resolutions if not provided.
     if num_r is None:
-        num_r = int(max_r)  # approximately one sample per pixel
+        num_r = max_r  # approximately one sample per pixel
     if num_theta is None:
         num_theta = int(xp.pi * max_r)  # based on the half-circumference
     if num_z is None:
         num_z = volume.shape[2]
     
     r_min = 0
-    if exclude_poles_from_cyl_projection:
+    if reduce_r_sampling_in_cylindrical_coords: # it looks like such reduction in sampling in r does not change final max projection almost at all
         num_r = round(max_r - max_r*0.6)
-        r_min = max_r*0.6
+        # r_min = max_r*0.6
+    logging.debug(f"num_r: {num_r}, max_r - max_r*0.6: {max_r - max_r*0.6}, r_min: {r_min}, r_max: {max_r}, num_theta: {num_theta}, xp.pi * max_r: {xp.pi * max_r}")
 
     # Define the cylindrical grid.
     r_vals = xp.linspace(0, max_r, num_r)
@@ -611,7 +612,7 @@ def cylindrical_cartography_projection(volume: xpArray, origin: tuple[int, int, 
     # Interpolate using linear interpolation.
     volume = volume.astype(xp.float16)
     cylindrical_volume = interpolate.interpn(points, volume, xi, method="linear", bounds_error=False, fill_value=0)
-    print("Cylindrical volume shape:", cylindrical_volume.shape)
+    logging.debug(f"Cylindrical volume shape: {cylindrical_volume.shape}")
     
     # Compute the maximum intensity projection along the radial (r) axis.
     projection = xp.max(cylindrical_volume, axis=0)
