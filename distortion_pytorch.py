@@ -46,11 +46,14 @@ def estimate_local_distortion_gpu(vertices, uv_coords, neighbors):
     ATA = AT.bmm(A)                     # [N, 3, 3]
     ATB = AT.bmm(B)                     # [N, 3, 2]
 
-    J = torch.linalg.solve(ATA, ATB)    # [N, 3, 2]
+    J = torch.linalg.lstsq(A, B).solution  # [N, 3, 2]
     J = J.transpose(1, 2)               # [N, 2, 3]
 
-    ideal_J = torch.tensor([[1, 0, 0], [0, 1, 0]], device=device).expand(N, -1, -1)
-    dist = (J - ideal_J)[:, :, :2].mean(dim=2)  # [N, 2]
+    # Compute stretch per UV axis: norm of Jacobian row vectors
+    stretch_u = torch.linalg.norm(J[:, 0, :], dim=1)  # [N]
+    stretch_v = torch.linalg.norm(J[:, 1, :], dim=1)  # [N]
+
+    dist = torch.stack([stretch_u, stretch_v], dim=1)  # [N, 2]
 
     return dist.cpu().numpy()
 
@@ -215,9 +218,9 @@ if __name__ == "__main__":
 
     uv_coords, points_on_cyl = project_to_cylinder(points)
     neighbors = gpu_knn_search(points, k=7)
-    # distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
-    # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
-    # visualize_distortion_map(distortion_x, distortion_y)
-    visualize_uv_projection(uv_coords, heatmap=True)
+    distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
+    distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
+    visualize_distortion_map(distortion_x, distortion_y)
+    # visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
     # visualize_3d_points(points, extra_points_zyx=points_on_cyl)
