@@ -9,10 +9,10 @@ from scipy.interpolate import griddata
 def project_to_cylinder(vertices, radius=1.0):
     x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
     theta = np.arctan2(x, z)
-    u = (theta + np.pi) / (2 * np.pi)  # Normalize to [0, 1]
-    v = (y - y.min()) / (y.max() - y.min())  # Normalize height
+    u = (theta + np.pi) #/ (2 * np.pi)  # Normalize to [0, 1]
+    v = (y - y.min()) #/ (y.max() - y.min())  # Normalize height
     uv = np.column_stack([u, v])
-    P_cyl = np.column_stack([radius * np.cos(theta), radius * np.sin(theta), y])
+    P_cyl = np.column_stack([y, radius * np.sin(theta), radius * np.cos(theta)])
     return uv, P_cyl
 
 
@@ -75,13 +75,28 @@ def visualize_distortion_map(distortion_x, distortion_y):
 
 
 def visualize_uv_projection(uv_coords):
+    """
+    Visualizes UV coordinates with uniform axis scaling and limits
+    suitable for cylindrical unwrapping.
+
+    Args:
+        uv_coords (np.ndarray): An array of UV coordinates with shape (N, 2).
+                                 Assumes U is in the range [0, 2*pi] and V is in [0, 1].
+    """
+
     plt.figure(figsize=(6, 6))
     plt.scatter(uv_coords[:, 0], uv_coords[:, 1], s=1, alpha=0.6)
-    plt.title('Projected UV Coordinates')
+    plt.title('Projected UV Coordinates (Uniform Scaling)')
     plt.xlabel('U')
     plt.ylabel('V')
-    plt.xlim(0, 1)
-    plt.ylim(0, 1)
+
+    # Set axis limits to cover the entire UV space
+    plt.xlim(0, 2 * np.pi)
+    plt.ylim(np.min(uv_coords[:, 1]), np.max(uv_coords[:, 1]))
+
+    # Ensure equal aspect ratio
+    plt.gca().set_aspect('equal', adjustable='box')  # 'box' ensures scaling based on visible data
+
     plt.grid(True)
     plt.tight_layout()
     plt.show()
@@ -131,11 +146,54 @@ def random_points_on_sphere_normal(n_points=10000, radius=0.8):
     points = points * radius # Scale to the desired radius
     return points
 
+def generate_meridian_points_vectorized(radius=0.8, num_meridians=20, points_per_meridian=20):
+    """
+    Generates points on a sphere arranged to mimic meridians (lines of longitude),
+    using vectorized NumPy operations for efficiency.
+
+    Args:
+        radius: The radius of the sphere.
+        num_meridians: The number of meridians to generate.
+        points_per_meridian: The number of points to generate along each meridian.
+
+    Returns:
+        A numpy array of shape (num_meridians * points_per_meridian, 3) containing the
+        3D coordinates of the points.
+    """
+
+    # Create arrays of meridian and latitude angles
+    meridian_indices = np.arange(num_meridians)
+    phi = 2 * np.pi * meridian_indices / num_meridians  # Shape: (num_meridians,)
+
+    if points_per_meridian > 1:
+        latitude_indices = np.arange(points_per_meridian)
+        theta = np.pi * latitude_indices / (points_per_meridian - 1)  # Shape: (points_per_meridian,)
+    else:
+        theta = np.array([np.pi/2]) #Special case
+
+    # Create a meshgrid of angles
+    phi, theta = np.meshgrid(phi, theta)  # Shape: (points_per_meridian, num_meridians)
+
+    # Flatten the angle arrays
+    phi = phi.flatten()  # Shape: (num_meridians * points_per_meridian,)
+    theta = theta.flatten()  # Shape: (num_meridians * points_per_meridian,)
+
+    # Convert to Cartesian coordinates using vectorized operations
+    x = radius * np.sin(theta) * np.cos(phi)
+    y = radius * np.sin(theta) * np.sin(phi)
+    z = radius * np.cos(theta)
+
+    # Stack the coordinates into a single array
+    points = np.stack((x, y, z), axis=-1)  # Shape: (num_meridians * points_per_meridian, 3)
+
+    return points
+
 if __name__ == "__main__":
     # Generate test mesh: small sphere
     # mesh = trimesh.creation.icosphere(subdivisions=3, radius=.8)
     # points = mesh.vertices
-    points = random_points_on_sphere_normal()
+    # points = random_points_on_sphere_normal()
+    points = generate_meridian_points_vectorized()
     print("Generated test mesh: sphere with", len(points), "vertices")
 
     uv_coords, points_on_cyl = project_to_cylinder(points)
@@ -143,6 +201,6 @@ if __name__ == "__main__":
     # distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
     # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
     # visualize_distortion_map(distortion_x, distortion_y)
-    # visualize_uv_projection(uv_coords)
+    visualize_uv_projection(uv_coords)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
     visualize_3d_points(points, extra_points_zyx=points_on_cyl)
