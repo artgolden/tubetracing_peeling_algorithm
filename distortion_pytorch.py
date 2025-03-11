@@ -78,6 +78,33 @@ def visualize_distortion_map(distortion_x, distortion_y):
     plt.tight_layout()
     plt.show()
 
+def visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5):
+    u = uv_coords[:, 0]
+    v = uv_coords[:, 1]
+    stretch_u = distortions[:, 0]
+    stretch_v = distortions[:, 1]
+
+    umin, umax = u.min(), u.max()
+    vmin, vmax = v.min(), v.max()
+
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+    axs[0].scatter(u, v, s=stretch_u * distortion_mag_factor, alpha=0.6, c='blue')
+    axs[0].set_title('U Stretch Factor (Size Encoded)')
+    axs[0].set_xlim(umin, umax)
+    axs[0].set_ylim(vmin, vmax)
+    axs[0].set_aspect('equal')
+    axs[0].grid(True)
+
+    axs[1].scatter(u, v, s=stretch_v * distortion_mag_factor, alpha=0.6, c='green')
+    axs[1].set_title('V Stretch Factor (Size Encoded)')
+    axs[1].set_xlim(umin, umax)
+    axs[1].set_ylim(vmin, vmax)
+    axs[1].set_aspect('equal')
+    axs[1].grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
 
 def visualize_uv_projection(uv_coords, heatmap=False, cmap='viridis'):
     """
@@ -210,7 +237,7 @@ def generate_meridian_points_vectorized(radius=0.8, num_meridians=20, points_per
 
 if __name__ == "__main__":
     # Generate test mesh: small sphere
-    mesh = trimesh.creation.icosphere(subdivisions=4, radius=.8)
+    mesh = trimesh.creation.icosphere(subdivisions=3, radius=1.0)
     points = mesh.vertices
     # points = random_points_on_sphere_normal(n_points=6000)
     # points = generate_meridian_points_vectorized()
@@ -219,8 +246,9 @@ if __name__ == "__main__":
     uv_coords, points_on_cyl = project_to_cylinder(points)
     neighbors = gpu_knn_search(points, k=7)
     distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
-    distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
-    visualize_distortion_map(distortion_x, distortion_y)
+    # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
+    # visualize_distortion_map(distortion_x, distortion_y)
+    visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
     # visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
     # visualize_3d_points(points, extra_points_zyx=points_on_cyl)
