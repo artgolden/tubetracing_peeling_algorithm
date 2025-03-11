@@ -12,7 +12,8 @@ def project_to_cylinder(vertices, radius=1.0):
     u = (theta + np.pi) / (2 * np.pi)  # Normalize to [0, 1]
     v = (y - y.min()) / (y.max() - y.min())  # Normalize height
     uv = np.column_stack([u, v])
-    return uv
+    P_cyl = np.column_stack([radius * np.cos(theta), radius * np.sin(theta), y])
+    return uv, P_cyl
 
 
 def gpu_knn_search(vertices, k):
@@ -85,7 +86,7 @@ def visualize_uv_projection(uv_coords):
     plt.tight_layout()
     plt.show()
 
-def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_points_idx=None, title="Original 3D Points"):
+def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_points_idx=None, extra_points_zyx=None, title="Original 3D Points"):
     """
     Visualize the original 3D surface points inside the 3D volume space.
     """
@@ -97,10 +98,14 @@ def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_po
     x = volume_points_zyx[:, 2]
 
     ax.scatter(x, y, z, c='blue', s=1, alpha=0.5)
-    ax.scatter(x[highlighted_points_idx], 
-               y[highlighted_points_idx], 
-               z[highlighted_points_idx], 
-               c='red', s=10, alpha=0.9)
+    if highlighted_points_idx is not None:
+        ax.scatter(x[highlighted_points_idx], 
+                y[highlighted_points_idx], 
+                z[highlighted_points_idx], 
+                c='red', s=10, alpha=0.9)
+    if extra_points_zyx is not None:
+        ax.scatter(extra_points_zyx[:, 2], extra_points_zyx[:, 1], extra_points_zyx[:, 0], c='green', s=1, alpha=0.7)
+    
 
     if volume_shape_zyx is not None:
         max_lim = max(volume_shape_zyx)
@@ -117,16 +122,27 @@ def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_po
     plt.tight_layout()
     plt.show()
 
+def random_points_on_sphere_normal(n_points=10000, radius=0.8):
+    """Generates random points on a sphere using a normal distribution.
+       This is a simpler method, but the distribution is not perfectly uniform.
+    """
+    points = np.random.normal(size=(n_points, 3))
+    points = points / np.linalg.norm(points, axis=1, keepdims=True)  # Normalize to unit vectors
+    points = points * radius # Scale to the desired radius
+    return points
+
 if __name__ == "__main__":
     # Generate test mesh: small sphere
-    mesh = trimesh.creation.icosphere(subdivisions=3, radius=.5)
-    print("Generated test mesh: sphere with", len(mesh.vertices), "vertices")
+    # mesh = trimesh.creation.icosphere(subdivisions=3, radius=.8)
+    # points = mesh.vertices
+    points = random_points_on_sphere_normal()
+    print("Generated test mesh: sphere with", len(points), "vertices")
 
-    uv_coords = project_to_cylinder(mesh.vertices)
-    neighbors = gpu_knn_search(mesh.vertices, k=7)
-    # distortions = estimate_local_distortion_gpu(mesh.vertices, uv_coords, neighbors)
+    uv_coords, points_on_cyl = project_to_cylinder(points)
+    neighbors = gpu_knn_search(points, k=7)
+    # distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
     # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
     # visualize_distortion_map(distortion_x, distortion_y)
     # visualize_uv_projection(uv_coords)
-    visualize_3d_points(mesh.vertices, highlighted_points_idx=neighbors[1])
-    # visualize_3d_points(mesh.vertices)
+    # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
+    visualize_3d_points(points, extra_points_zyx=points_on_cyl)
