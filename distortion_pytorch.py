@@ -42,9 +42,6 @@ def estimate_local_distortion_gpu(vertices, uv_coords, neighbors):
     B = duv                             # [N, K, 2]
 
     # Solve least squares per vertex: A * J^T = B  => J = (A^T A)^-1 A^T B
-    AT = A.transpose(1, 2)              # [N, 3, K]
-    ATA = AT.bmm(A)                     # [N, 3, 3]
-    ATB = AT.bmm(B)                     # [N, 3, 2]
 
     J = torch.linalg.lstsq(A, B).solution  # [N, 3, 2]
     J = J.transpose(1, 2)               # [N, 2, 3]
@@ -248,7 +245,7 @@ if __name__ == "__main__":
     distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
     # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
     # visualize_distortion_map(distortion_x, distortion_y)
-    visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
+    visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=30)
     # visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
     # visualize_3d_points(points, extra_points_zyx=points_on_cyl)
