@@ -9,12 +9,16 @@ from scipy.stats import gaussian_kde
 
 
 def project_to_cylinder(vertices, radius=1.0):
-    x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
+    x, y, z = vertices[:, 2], vertices[:, 1], vertices[:, 0]
     theta = np.arctan2(x, z)
-    u = theta 
+    u = np.abs(theta) <= np.pi/2
     v = y 
     uv = np.column_stack([u, v])
-    P_cyl = np.column_stack([y, radius * np.sin(theta), radius * np.cos(theta)])
+    P_cyl = np.column_stack([
+        radius * np.cos(theta),  # Z on cylinder
+        y,                       # Vertical coordinate (unchanged)
+        radius * np.sin(theta), # X on cylinder
+    ])
     return uv, P_cyl
 
 
@@ -156,14 +160,14 @@ def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_po
     y = volume_points_zyx[:, 1]
     x = volume_points_zyx[:, 2]
 
-    ax.scatter(x, y, z, c='blue', s=1, alpha=0.5)
+    ax.scatter(x, y, z, c='purple', s=3, alpha=0.5)
     if highlighted_points_idx is not None:
         ax.scatter(x[highlighted_points_idx], 
                 y[highlighted_points_idx], 
                 z[highlighted_points_idx], 
                 c='red', s=10, alpha=0.9)
     if extra_points_zyx is not None:
-        ax.scatter(extra_points_zyx[:, 2], extra_points_zyx[:, 1], extra_points_zyx[:, 0], c='green', s=1, alpha=0.7)
+        ax.scatter(extra_points_zyx[:, 2], extra_points_zyx[:, 1], extra_points_zyx[:, 0], c='green', s=3, alpha=0.7)
     
 
     if volume_shape_zyx is not None:
@@ -235,17 +239,20 @@ def generate_meridian_points_vectorized(radius=0.8, num_meridians=20, points_per
 if __name__ == "__main__":
     # Generate test mesh: small sphere
     mesh = trimesh.creation.icosphere(subdivisions=3, radius=1.0)
-    points = mesh.vertices
+    points = mesh.vertices[:, [2, 1, 0]]
+    
+    
     # points = random_points_on_sphere_normal(n_points=6000)
     # points = generate_meridian_points_vectorized()
-    print("Generated test mesh: sphere with", len(points), "vertices")
+    half_sphere_points = points[points[:, 0] >= 0]
+    print("Generated test mesh: half sphere with", len(half_sphere_points), "vertices")
 
-    uv_coords, points_on_cyl = project_to_cylinder(points)
-    neighbors = gpu_knn_search(points, k=7)
-    distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
+    uv_coords, points_on_cyl = project_to_cylinder(half_sphere_points)
+    # neighbors = gpu_knn_search(half_sphere_points, k=7)
+    # distortions = estimate_local_distortion_gpu(half_sphere_points, uv_coords, neighbors)
     # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
     # visualize_distortion_map(distortion_x, distortion_y)
-    visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=30)
+    # visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=30)
     # visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
-    # visualize_3d_points(points, extra_points_zyx=points_on_cyl)
+    visualize_3d_points(half_sphere_points, extra_points_zyx=points_on_cyl)
