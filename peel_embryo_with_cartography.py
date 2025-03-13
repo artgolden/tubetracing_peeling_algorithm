@@ -24,6 +24,7 @@ import importlib
 from scipy import ndimage as cpu_ndimage
 from numba import njit
 from typing import Optional
+from joblib import Parallel, delayed
 
 DEBUG_MODE = True
 RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO = 1.15
@@ -60,42 +61,45 @@ def load_3d_volume(file_path):
         print(f"Error loading TIFF file: {e}")
         return None
 
-def crop_rotated_3d(image, center, size, rotation_matrix):
+def crop_rotated_3d(image, center, size, rotation_matrix, n_jobs=-1):
     """
-    Crops a rotated 3D region from an image.
+    High-performance cropped rotated 3D region from an image using parallel processing.
     
     :param image: 3D numpy array (Z, Y, X)
     :param center: (z, y, x) center of the crop region
     :param size: (depth, height, width) of the desired output
     :param rotation_matrix: 3x3 rotation matrix
+    :param n_jobs: Number of parallel jobs (-1 uses all available cores)
     :return: Cropped 3D region
     """
-    # Get the inverse transformation (map crop space to original space)
-    inv_rot_matrix = np.linalg.inv(rotation_matrix)
-    
-    # Generate target coordinates in the cropped space
-    dz, dy, dx = np.meshgrid(
-        np.arange(size[0]) - size[0] // 2,
-        np.arange(size[1]) - size[1] // 2,
-        np.arange(size[2]) - size[2] // 2,
-        indexing='ij'
+    inv_rot = np.linalg.inv(rotation_matrix)
+
+    # Precompute local coordinates for one 2D slice
+    dz = np.arange(size[0]) - size[0] // 2
+    dy = np.arange(size[1]) - size[1] // 2
+    dx = np.arange(size[2]) - size[2] // 2
+    grid_y, grid_x = np.meshgrid(dy, dx, indexing='ij')
+    base_coords = np.stack([np.zeros_like(grid_x), grid_y, grid_x], axis=-1)  # Shape: (H, W, 3)
+
+    def process_z_slice(i):
+        z_offset = dz[i]
+        coords = base_coords.copy()
+        coords[..., 0] = z_offset  # insert Z-offset into all coordinates
+        world_coords = np.einsum('ij,hwj->hwi', inv_rot, coords) + center
+        sampled = cpu_ndimage.map_coordinates(
+            image,
+            [world_coords[..., 0], world_coords[..., 1], world_coords[..., 2]],
+            order=1,
+            mode='nearest'
+        )
+        return sampled
+
+    cropped_volume = Parallel(n_jobs=n_jobs)(
+        delayed(process_z_slice)(i) for i in range(size[0])
     )
 
-    # Stack coordinates and apply inverse transformation
-    target_coords = np.stack([dz, dy, dx], axis=-1)
-    source_coords = np.dot(target_coords, inv_rot_matrix.T) + center
+    return np.stack(cropped_volume, axis=0)
 
-    # Interpolate from original image using scipy.ndimage
-    cropped_region = cpu_ndimage.map_coordinates(
-        image, 
-        [source_coords[..., 0], 
-         source_coords[..., 1], 
-         source_coords[..., 2]], 
-        order=1,
-        mode='nearest'
-    )
-    
-    return cropped_region
 
 def get_matrix_with_circle(radius, shape=None, center=None):
     """
@@ -179,7 +183,7 @@ def crop_around_embryo(image_3d, mask, target_crop_shape=None) -> Optional[np.nd
     (center_x, center_y), (width, height), angle_deg = rotated_rect
     center = (full_depth/2, center_y, center_x)  
     expand_r = RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO
-    size = (full_depth, int(width)*expand_r, int(height)*expand_r)  
+    size = (full_depth, int(width*expand_r), int(height*expand_r))  
     logging.info(f"Cropping embryo with center: {center}, size: {size}, angle: {angle_deg}")
     if target_crop_shape is not None:
         size = target_crop_shape
@@ -194,7 +198,8 @@ def crop_around_embryo(image_3d, mask, target_crop_shape=None) -> Optional[np.nd
         [0, np.sin(theta),  np.cos(theta)],
     ])
 
-    return crop_rotated_3d(image_3d, center, size, rotation_matrix)
+    cropped = crop_rotated_3d(image_3d, center, size, rotation_matrix)
+    return cropped
     
 def cartesian_to_polar(volume: xpArray, origin, rho_res=1, theta_res=360, phi_res=180, phi_max=np.pi / 2) -> xpArray:
     """
@@ -748,7 +753,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         logging.debug(f"Number of detected points: {len(points)}")
         if len(points) > 300000:
             logging.error("Too many points detected. This is likely due to a bad surface segmentation. Embryo peeling failed.")
-            return False
+            return False, False
 
         points = add_projected_embryo_outline_points(downsampled_zyx.shape, points)
         if do_save_points:
