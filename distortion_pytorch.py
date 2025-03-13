@@ -11,8 +11,8 @@ from scipy.stats import gaussian_kde
 def project_to_cylinder(vertices, radius=1.0):
     x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
     theta = np.arctan2(x, z)
-    u = (theta + np.pi) #/ (2 * np.pi)  # Normalize to [0, 1]
-    v = (y - y.min()) #/ (y.max() - y.min())  # Normalize height
+    u = theta 
+    v = y 
     uv = np.column_stack([u, v])
     P_cyl = np.column_stack([y, radius * np.sin(theta), radius * np.cos(theta)])
     return uv, P_cyl
