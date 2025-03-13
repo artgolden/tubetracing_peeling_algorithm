@@ -25,6 +25,8 @@ from scipy import ndimage as cpu_ndimage
 from numba import njit
 from typing import Optional
 from joblib import Parallel, delayed
+import torch
+import torch.nn.functional as F
 
 DEBUG_MODE = True
 RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO = 1.15
@@ -60,6 +62,75 @@ def load_3d_volume(file_path):
     except Exception as e:
         print(f"Error loading TIFF file: {e}")
         return None
+
+def crop_rotated_3d_torch(image, center, size, rotation_matrix, device=None):
+    """
+    High-performance GPU 3D crop with rotation using PyTorch.
+
+    :param image: 3D numpy array (Z, Y, X), float32
+    :param center: (z, y, x) center of the crop region
+    :param size: (depth, height, width) of the desired output
+    :param rotation_matrix: 3x3 rotation matrix (numpy or torch)
+    :param device: 'cuda' or 'cpu'
+    :return: Cropped 3D region as numpy array (float32)
+    """
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    rotation_matrix = np.linalg.inv(rotation_matrix)
+
+    def convert_numpy_dtype_to_torch_dtype(numpy_dtype):
+        if numpy_dtype == np.float32:
+            return torch.float32
+        elif numpy_dtype == np.uint64:
+            return torch.uint64
+        elif numpy_dtype == np.uint32:
+            return torch.uint32
+        elif numpy_dtype == np.uint16:
+            return torch.uint16
+        elif numpy_dtype == np.uint8:
+            return torch.uint8
+        elif numpy_dtype == np.int8:
+            return torch.int8
+        elif numpy_dtype == np.bool_:
+            return torch.bool
+        else:
+            return None 
+
+    input_dtype = convert_numpy_dtype_to_torch_dtype(image.dtype)
+    # Move everything to torch
+    image_tensor = torch.from_numpy(image).to(torch.float32).unsqueeze(0).unsqueeze(0).to(device)  # (B=1, C=1, D, H, W)
+    center = torch.tensor(center, dtype=torch.float32, device=device)
+    rotation_matrix = torch.tensor(rotation_matrix, dtype=torch.float32, device=device)
+
+    D, H, W = size
+    dz = torch.linspace(-D/2 + 0.5, D/2 - 0.5, D, device=device)
+    dy = torch.linspace(-H/2 + 0.5, H/2 - 0.5, H, device=device)
+    dx = torch.linspace(-W/2 + 0.5, W/2 - 0.5, W, device=device)
+    zz, yy, xx = torch.meshgrid(dz, dy, dx, indexing='ij')  # (D, H, W)
+
+    grid = torch.stack([zz, yy, xx], dim=-1).reshape(-1, 3)  # (D*H*W, 3)
+
+    # Apply rotation and translation
+    world_coords = grid @ rotation_matrix.T + center[None, :]
+
+    # Normalize to [-1, 1] for grid_sample
+    iz, iy, ix = image_tensor.shape[-3:]
+    norm_coords = torch.empty_like(world_coords)
+    norm_coords[:, 0] = 2.0 * world_coords[:, 2] / (ix - 1) - 1.0  # X
+    norm_coords[:, 1] = 2.0 * world_coords[:, 1] / (iy - 1) - 1.0  # Y
+    norm_coords[:, 2] = 2.0 * world_coords[:, 0] / (iz - 1) - 1.0  # Z
+
+    # Reshape for grid_sample
+    norm_coords = norm_coords.reshape(D, H, W, 3).unsqueeze(0)
+
+    # Rearrange grid axes for 3D grid_sample
+    norm_coords = norm_coords.permute(0, 4, 1, 2, 3)  # (B=1, 3, D, H, W)
+    norm_coords = norm_coords.permute(0, 2, 3, 4, 1)  # (B, D, H, W, 3)
+
+    # Sample the rotated crop
+    cropped = F.grid_sample(image_tensor, norm_coords, mode='nearest', align_corners=False, padding_mode='border')
+    result_uint8 = torch.round(cropped).clamp(0, torch.iinfo(input_dtype).max).to(input_dtype)
+    return result_uint8.squeeze().cpu().numpy()
 
 def crop_rotated_3d(image, center, size, rotation_matrix, n_jobs=-1):
     """
@@ -198,7 +269,7 @@ def crop_around_embryo(image_3d, mask, target_crop_shape=None) -> Optional[np.nd
         [0, np.sin(theta),  np.cos(theta)],
     ])
 
-    cropped = crop_rotated_3d(image_3d, center, size, rotation_matrix)
+    cropped = crop_rotated_3d_torch(image_3d, center, size, rotation_matrix)
     return cropped
     
 def cartesian_to_polar(volume: xpArray, origin, rho_res=1, theta_res=360, phi_res=180, phi_max=np.pi / 2) -> xpArray:
@@ -913,7 +984,7 @@ def process_timepoint(ill_file_paths: list,
                       thresholding_after_wbns=None,
                       do_save_thresholding_mask=True,
                       do_save_down_cropped=True,
-                      do_save_cropped_iso=False):
+                      do_save_cropped_iso=True):
 
     logging.info(f"Processing timepoint with files: {ill_file_paths}")
     print(f"Processing timepoint {timepoint}")
