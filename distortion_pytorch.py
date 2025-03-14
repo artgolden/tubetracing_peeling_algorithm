@@ -354,6 +354,59 @@ def sparse_grid_on_half_cylinder(
 
     return points_3d
 
+def project_points_onto_convex_hull_mesh(
+    mesh_points: np.ndarray,
+    points_to_project: np.ndarray,
+    return_distance: bool = False,
+    distance_threshold: float = None
+) -> np.ndarray:
+    """
+    Build a convex hull mesh from a point cloud and project other points onto its surface.
+
+    Parameters:
+    -----------
+    mesh_points : np.ndarray
+        Point cloud used to build the convex hull mesh (shape Nx3).
+    points_to_project : np.ndarray
+        Points to be projected onto the mesh surface (shape Mx3).
+    return_distance : bool
+        If True, also returns distances and face indices.
+    distance_threshold : float or None
+        If set, only keeps projected points within this distance.
+
+    Returns:
+    --------
+    projected_points : np.ndarray
+        Projected points on the mesh surface (Mx3 or filtered).
+    distances : np.ndarray (optional)
+        Distances from original points to surface.
+    face_ids : np.ndarray (optional)
+        Triangle face IDs each point was projected onto.
+    """
+    # Step 1: Build convex hull
+    hull = ConvexHull(mesh_points)
+    faces = hull.simplices
+    vertices = mesh_points
+
+    # Step 2: Create mesh from convex hull
+    mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=True)
+
+    # Step 3: Project points onto mesh
+    closest_points, distances, face_ids = trimesh.proximity.closest_point(mesh, points_to_project)
+
+    # Step 4: Optional distance threshold filtering
+    if distance_threshold is not None:
+        mask = distances <= distance_threshold
+        closest_points = closest_points[mask]
+        if return_distance:
+            distances = distances[mask]
+            face_ids = face_ids[mask]
+
+    if return_distance:
+        return closest_points, distances, face_ids
+    return closest_points
+
+
 if __name__ == "__main__":
     # Generate test mesh: small sphere
     # mesh = trimesh.creation.icosphere(subdivisions=3, radius=1.0)
@@ -399,6 +452,8 @@ if __name__ == "__main__":
     uv_coords, points_on_cyl = project_to_cylinder(points, radius=max_r, origin_yz=(vol_shape[1]//2, 0))
     grid_points = sparse_grid_on_half_cylinder((vol_shape[2], round(np.pi * max_r + 1)), radius=max_r, origin_yz=(vol_shape[1]//2, 0))
     print("Grid points: ", len(grid_points))
+    back_proj_grid = project_points_onto_convex_hull_mesh(points, grid_points)
+
     # neighbors = gpu_knn_search(points, k=32)
     # distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
     # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
@@ -407,4 +462,4 @@ if __name__ == "__main__":
     # visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
     # visualize_3d_points(points, extra_points_zyx=points_on_cyl)
-    visualize_3d_points(points, extra_points_zyx=grid_points)
+    visualize_3d_points(back_proj_grid, extra_points_zyx=grid_points)
