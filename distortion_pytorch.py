@@ -70,7 +70,6 @@ def estimate_local_distortion_gpu(vertices, uv_coords, neighbors):
     # Compute stretch per UV axis: norm of Jacobian row vectors
     stretch_u = torch.linalg.norm(J[:, 0, :], dim=1)  # [N]
     stretch_v = torch.linalg.norm(J[:, 1, :], dim=1)  # [N]
-
     dist = torch.stack([stretch_u, stretch_v], dim=1)  # [N, 2]
 
     # Mask out low-confidence results (non-full-rank entries)
@@ -301,6 +300,60 @@ def sample_surface_points_from_convex_hull(
     sampled_points = np.asarray(pcd.points)
     return sampled_points
 
+def sparse_grid_on_half_cylinder(
+    image_shape,
+    spacing_x=7,
+    spacing_theta=7,
+    radius=1.0,
+    origin_yz=(0.0, 0.0)
+):
+    """
+    Create a sparse 3D half-cylinder surface grid from a 2D image shape, with configurable spacing.
+
+    Parameters:
+    -----------
+    image_shape : tuple of int
+        Shape of the 2D image (height, width) — used to determine max dimensions.
+    spacing_x : float
+        Distance between points along the X-axis (vertical direction).
+    spacing_theta : float
+        Arc-length spacing between points along the cylinder (horizontal direction).
+    radius : float
+        Radius of the cylinder.
+    origin_yz : tuple of float
+        Origin of the cylinder in (y0, z0) space (cylinder center axis in YZ-plane).
+
+    Returns:
+    --------
+    points_3d : np.ndarray
+        Sparse 3D points on the half-cylinder surface (N x 3).
+    """
+    height, width = image_shape
+    y0, z0 = origin_yz
+
+    # Total arc length for half-cylinder
+    arc_length = np.pi * radius
+
+    # Determine number of points along each axis based on spacing
+    num_points_theta = max(1, int(width) // spacing_theta)
+    num_points_x = max(1, int((height) // spacing_x))
+
+    # Actual theta and x values
+    theta = np.linspace(-np.pi / 2, np.pi / 2, num_points_theta)
+    x = np.arange(0, num_points_x * spacing_x, spacing_x)
+
+    # Meshgrid (theta along horizontal, x along vertical)
+    theta_grid, x_grid = np.meshgrid(theta, x)
+
+    # Convert to 3D points on the cylinder
+    z = radius * np.cos(theta_grid) + z0
+    y = radius * np.sin(theta_grid) + y0
+
+    # Stack into final 3D point array
+    points_3d = np.column_stack([z.ravel(), y.ravel(), x_grid.ravel()])
+
+    return points_3d
+
 if __name__ == "__main__":
     # Generate test mesh: small sphere
     # mesh = trimesh.creation.icosphere(subdivisions=3, radius=1.0)
@@ -309,7 +362,7 @@ if __name__ == "__main__":
     points = np.load("outs/hull_embryo_surface_points.npy")[:, [2, 1, 0]]
     print(f"Points z: {min(points[:, 0])} to {max(points[:, 0])}, y: {min(points[:, 1])} to {max(points[:, 1])}, x: {min(points[:, 2])} to {max(points[:, 2])}")
     print("Loaded points: ", len(points))
-    points = sample_surface_points_from_convex_hull(points)
+    points = sample_surface_points_from_convex_hull(points, n_samples=5000)
     if False:
         from scipy.spatial import ConvexHull
         import trimesh
@@ -336,18 +389,22 @@ if __name__ == "__main__":
     
     vol_shape = tiff.imread("outs/down_cropped_tp_300.tif").shape
     points[:,[0]] = vol_shape[0] - points[:,[0]] -1 # Flip z axis
-    points = points[points[:, 0] > min(points[:, 0])]
+    print(f"Points z: {min(points[:, 0])} to {max(points[:, 0])}, y: {min(points[:, 1])} to {max(points[:, 1])}, x: {min(points[:, 2])} to {max(points[:, 2])}")
+    points = points[points[:, 0] > min(points[:, 0])+1]
     print(f"Volume shape: {vol_shape}")
     # points = random_points_on_sphere_normal(n_points=6000)
     # points = generate_meridian_points_vectorized()
     # half_sphere_points = points[points[:, 0] >= 0]
     max_r = round(vol_shape[1] / 2.0 * 1.15)
     uv_coords, points_on_cyl = project_to_cylinder(points, radius=max_r, origin_yz=(vol_shape[1]//2, 0))
-    # neighbors = gpu_knn_search(points, k=7)
+    grid_points = sparse_grid_on_half_cylinder((vol_shape[2], round(np.pi * max_r + 1)), radius=max_r, origin_yz=(vol_shape[1]//2, 0))
+    print("Grid points: ", len(grid_points))
+    # neighbors = gpu_knn_search(points, k=32)
     # distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
     # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
     # visualize_distortion_map(distortion_x, distortion_y)
     # visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
-    visualize_uv_projection(uv_coords, heatmap=True)
+    # visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
-    visualize_3d_points(points, extra_points_zyx=points_on_cyl)
+    # visualize_3d_points(points, extra_points_zyx=points_on_cyl)
+    visualize_3d_points(points, extra_points_zyx=grid_points)
