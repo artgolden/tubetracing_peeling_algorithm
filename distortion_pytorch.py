@@ -78,23 +78,60 @@ def estimate_local_distortion_gpu(vertices, uv_coords, neighbors):
     return dist.cpu().numpy()
 
 
-def rasterize_distortion_map(uv_coords, distortions, resolution=(512, 512)):
-    u = uv_coords[:, 0]
-    v = uv_coords[:, 1]
-    grid_u, grid_v = np.mgrid[0:1:complex(resolution[0]), 0:1:complex(resolution[1])]
+def interpolate_and_show_heatmap(
+    points_2d: np.ndarray,
+    values: np.ndarray,
+    grid_resolution: int = 300,
+    method: str = 'cubic',
+    cmap: str = 'viridis',
+    show_points: bool = True
+):
+    """
+    Interpolate scattered 2D points with scalar values into a 2D image heatmap and display it.
 
-    distortion_x = griddata((u, v), distortions[:, 0], (grid_u, grid_v), method='linear', fill_value=0)
-    distortion_y = griddata((u, v), distortions[:, 1], (grid_u, grid_v), method='linear', fill_value=0)
+    Parameters:
+    -----------
+    points_2d : np.ndarray
+        Array of 2D coordinates, shape (N, 2).
+    values : np.ndarray
+        Scalar values corresponding to each 2D point, shape (N,).
+    grid_resolution : int
+        Resolution of the interpolation grid (image size will be grid_resolution x grid_resolution).
+    method : str
+        Interpolation method: 'linear', 'nearest', or 'cubic'.
+    cmap : str
+        Matplotlib colormap name.
+    show_points : bool
+        Whether to overlay original points on the heatmap.
+    """
+    # Bounds for interpolation grid
+    x_min, x_max = points_2d[:, 0].min(), points_2d[:, 0].max()
+    y_min, y_max = points_2d[:, 1].min(), points_2d[:, 1].max()
 
-    return distortion_x, distortion_y
+    # Create grid
+    grid_x, grid_y = np.meshgrid(
+        np.linspace(x_min, x_max, grid_resolution),
+        np.linspace(y_min, y_max, grid_resolution)
+    )
 
+    # Interpolate scalar values over grid
+    grid_z = griddata(points_2d, values, (grid_x, grid_y), method=method)
 
-def visualize_distortion_map(distortion_x, distortion_y):
-    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
-    axs[0].imshow(distortion_x.T, origin='lower', cmap='RdBu')
-    axs[0].set_title('Distortion X')
-    axs[1].imshow(distortion_y.T, origin='lower', cmap='RdBu')
-    axs[1].set_title('Distortion Y')
+    # Plot
+    plt.figure(figsize=(8, 6))
+    heatmap = plt.imshow(
+        grid_z,
+        extent=(x_min, x_max, y_min, y_max),
+        origin='lower',
+        cmap=cmap,
+        aspect='auto'
+    )
+    plt.colorbar(heatmap, label='Interpolated Value')
+    if show_points:
+        plt.scatter(points_2d[:, 0], points_2d[:, 1], c=values, edgecolor='k', s=30, cmap=cmap)
+    plt.title("Interpolated 2D Scalar Field (Heatmap)")
+    plt.xlabel("X")
+    plt.ylabel("Y")
     plt.tight_layout()
     plt.show()
 
@@ -417,7 +454,7 @@ if __name__ == "__main__":
     print(f"Points z: {min(points[:, 0])} to {max(points[:, 0])}, y: {min(points[:, 1])} to {max(points[:, 1])}, x: {min(points[:, 2])} to {max(points[:, 2])}")
     print("Loaded points: ", len(points))
     # points = sample_surface_points_from_convex_hull(points, n_samples=5000)
-    points = refine_point_cloud_with_vedo(points, n_subdivisions=3, n_smoothing_iterations=10)
+    points = refine_point_cloud_with_vedo(points, n_subdivisions=2, n_smoothing_iterations=10)
     if False:
         from scipy.spatial import ConvexHull
         import trimesh
@@ -458,8 +495,7 @@ if __name__ == "__main__":
     distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
     visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
 
-    # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
-    # visualize_distortion_map(distortion_x, distortion_y)
+    interpolate_and_show_heatmap(uv_coords, distortions[:,[0]])
     # visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
     # visualize_3d_points(points, extra_points_zyx=points_on_cyl)
