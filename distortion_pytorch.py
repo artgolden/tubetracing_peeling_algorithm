@@ -6,18 +6,23 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import griddata
 import matplotlib.cm as cm
 from scipy.stats import gaussian_kde
+import tifffile as tiff
+import open3d as o3d
+from scipy.spatial import ConvexHull
 
 
-def project_to_cylinder(vertices, radius=1.0):
+def project_to_cylinder(vertices, radius=1.0, origin_yz=(0, 0)):
+    y0,z0 = origin_yz
     x, y, z = vertices[:, 2], vertices[:, 1], vertices[:, 0]
-    theta = np.arctan2(x, z)
-    u = np.abs(theta) <= np.pi/2
-    v = y 
+    theta = np.arctan2(y - y0, z - z0)
+    # u = theta[np.abs(theta) <= np.pi/2]
+    u = (theta + np.pi) / (2*np.pi) * np.pi * radius # only half cylinder
+    v = x
     uv = np.column_stack([u, v])
     P_cyl = np.column_stack([
-        radius * np.cos(theta),  # Z on cylinder
-        y,                       # Vertical coordinate (unchanged)
-        radius * np.sin(theta), # X on cylinder
+        radius * np.cos(theta) + z0,  # Z on cylinder
+        radius * np.sin(theta) + y0, # Y on cylinder
+        x,                       # Vertical coordinate (unchanged)
     ])
     return uv, P_cyl
 
@@ -79,11 +84,14 @@ def visualize_distortion_map(distortion_x, distortion_y):
     plt.tight_layout()
     plt.show()
 
-def visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5):
-    u = uv_coords[:, 0]
-    v = uv_coords[:, 1]
-    stretch_u = distortions[:, 0]
-    stretch_v = distortions[:, 1]
+def visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5, cutoff=10):
+    u_filtered_ids = distortions[:, 0] < cutoff
+    v_filtered_ids = distortions[:, 1] < cutoff
+    filtered_ids = u_filtered_ids & v_filtered_ids
+    u = uv_coords[:, 0][filtered_ids]
+    v = uv_coords[:, 1][filtered_ids]
+    stretch_u = distortions[:, 0][filtered_ids]
+    stretch_v = distortions[:, 1][filtered_ids]
 
     umin, umax = u.min(), u.max()
     vmin, vmax = v.min(), v.max()
@@ -139,7 +147,7 @@ def visualize_uv_projection(uv_coords, heatmap=False, cmap='viridis'):
     plt.ylabel('V')
 
     # Set axis limits to cover the entire UV space
-    plt.xlim(0, 2 * np.pi)
+    plt.xlim(np.min(uv_coords[:, 0]), np.max(uv_coords[:, 0]))
     plt.ylim(np.min(uv_coords[:, 1]), np.max(uv_coords[:, 1]))
 
     # Equal aspect ratio
@@ -236,23 +244,95 @@ def generate_meridian_points_vectorized(radius=0.8, num_meridians=20, points_per
 
     return points
 
+def sample_surface_points_from_convex_hull(
+    points: np.ndarray,
+    n_samples: int = 10000,
+    method: str = "uniform"
+) -> np.ndarray:
+    """
+    Uniformly sample points from the surface of a convex hull mesh.
+
+    Parameters:
+    -----------
+    points : np.ndarray
+        Input 3D point cloud, shape (N, 3).
+    n_samples : int
+        Number of surface points to sample.
+    method : str
+        Sampling method: "uniform" or "poisson".
+
+    Returns:
+    --------
+    sampled_points : np.ndarray
+        Sampled surface points, shape (n_samples, 3).
+    """
+    # Step 1: Compute convex hull
+    hull = ConvexHull(points)
+
+    # Step 2: Create Open3D mesh
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(points)
+    mesh.triangles = o3d.utility.Vector3iVector(hull.simplices)
+    mesh.compute_vertex_normals()
+
+    # Step 3: Sample surface points
+    if method == "uniform":
+        pcd = mesh.sample_points_uniformly(number_of_points=n_samples)
+    elif method == "poisson":
+        pcd = mesh.sample_points_poisson_disk(number_of_points=n_samples, init_factor=5)
+    else:
+        raise ValueError("Invalid method. Choose 'uniform' or 'poisson'.")
+
+    sampled_points = np.asarray(pcd.points)
+    return sampled_points
+
 if __name__ == "__main__":
     # Generate test mesh: small sphere
-    mesh = trimesh.creation.icosphere(subdivisions=3, radius=1.0)
-    points = mesh.vertices[:, [2, 1, 0]]
+    # mesh = trimesh.creation.icosphere(subdivisions=3, radius=1.0)
+
+    # points = mesh.vertices[:, [2, 1, 0]]
+    points = np.load("outs/hull_embryo_surface_points.npy")[:, [2, 1, 0]]
+    print(f"Points z: {min(points[:, 0])} to {max(points[:, 0])}, y: {min(points[:, 1])} to {max(points[:, 1])}, x: {min(points[:, 2])} to {max(points[:, 2])}")
+    print("Loaded points: ", len(points))
+    points = sample_surface_points_from_convex_hull(points)
+    if False:
+        from scipy.spatial import ConvexHull
+        import trimesh
+        hull = ConvexHull(points)
+        hull_vertices = points[hull.vertices]
+        hull_faces = hull.simplices
+
+        # Step 2: Create initial mesh from convex hull
+        mesh = trimesh.Trimesh(vertices=points, faces=hull_faces)
+        # Step 3: Subdivide the mesh to increase triangle density
+        # Subdivide using trimesh remeshing (loop subdivision)
+        mesh = mesh.subdivide()
+        # mesh = mesh.subdivide()
+        # mesh = mesh.subdivide_to_size(max_edge=10)
+
+        # Optional: Further subdivision if needed
+        # mesh = mesh.subdivide()
+
+        # Step 4: Get dense vertices (passed further down)
+        dense_vertices = mesh.vertices
+        points = dense_vertices
+    print("Generated dense hull mesh: ", len(points), "vertices")
     
     
+    vol_shape = tiff.imread("outs/down_cropped_tp_300.tif").shape
+    points[:,[0]] = vol_shape[0] - points[:,[0]] -1 # Flip z axis
+    points = points[points[:, 0] > min(points[:, 0])]
+    print(f"Volume shape: {vol_shape}")
     # points = random_points_on_sphere_normal(n_points=6000)
     # points = generate_meridian_points_vectorized()
-    half_sphere_points = points[points[:, 0] >= 0]
-    print("Generated test mesh: half sphere with", len(half_sphere_points), "vertices")
-
-    uv_coords, points_on_cyl = project_to_cylinder(half_sphere_points)
-    # neighbors = gpu_knn_search(half_sphere_points, k=7)
-    # distortions = estimate_local_distortion_gpu(half_sphere_points, uv_coords, neighbors)
+    # half_sphere_points = points[points[:, 0] >= 0]
+    max_r = round(vol_shape[1] / 2.0 * 1.15)
+    uv_coords, points_on_cyl = project_to_cylinder(points, radius=max_r, origin_yz=(vol_shape[1]//2, 0))
+    # neighbors = gpu_knn_search(points, k=7)
+    # distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
     # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
     # visualize_distortion_map(distortion_x, distortion_y)
-    # visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=30)
-    # visualize_uv_projection(uv_coords, heatmap=True)
+    # visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
+    visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
-    visualize_3d_points(half_sphere_points, extra_points_zyx=points_on_cyl)
+    visualize_3d_points(points, extra_points_zyx=points_on_cyl)
