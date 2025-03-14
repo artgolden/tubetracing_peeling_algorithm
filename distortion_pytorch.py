@@ -50,16 +50,31 @@ def estimate_local_distortion_gpu(vertices, uv_coords, neighbors):
     A = d3d                             # [N, K, 3]
     B = duv                             # [N, K, 2]
 
-    # Solve least squares per vertex: A * J^T = B  => J = (A^T A)^-1 A^T B
+    # Compute ATA and ATB in batch
+    AT = A.transpose(1, 2)              # [N, 3, K]
+    ATA = AT.bmm(A)                    # [N, 3, 3]
+    ATB = AT.bmm(B)                    # [N, 3, 2]
 
-    J = torch.linalg.lstsq(A, B).solution  # [N, 3, 2]
-    J = J.transpose(1, 2)               # [N, 2, 3]
+    # Check rank of ATA using SVD
+    U, S, Vh = torch.linalg.svd(ATA)
+    rank_mask = (S[:, 1] > 1e-6) & (S[:, 2] > 1e-6)  # requires full rank (3 non-zero singular values)
+
+    # Initialize output
+    J = torch.zeros((N, 2, 3), device=device)
+
+    # Use pseudo-inverse fallback for safe solution even when ATA is nearly singular
+    ATA_inv = torch.linalg.pinv(ATA)  # [N, 3, 3]
+    J_all = ATA_inv.bmm(ATB).transpose(1, 2)  # [N, 2, 3]
+    J[rank_mask] = J_all[rank_mask]
 
     # Compute stretch per UV axis: norm of Jacobian row vectors
     stretch_u = torch.linalg.norm(J[:, 0, :], dim=1)  # [N]
     stretch_v = torch.linalg.norm(J[:, 1, :], dim=1)  # [N]
 
     dist = torch.stack([stretch_u, stretch_v], dim=1)  # [N, 2]
+
+    # Mask out low-confidence results (non-full-rank entries)
+    dist[~rank_mask.cpu()] = float('nan')
 
     return dist.cpu().numpy()
 
