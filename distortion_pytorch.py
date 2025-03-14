@@ -307,32 +307,10 @@ def sparse_grid_on_half_cylinder(
     radius=1.0,
     origin_yz=(0.0, 0.0)
 ):
-    """
-    Create a sparse 3D half-cylinder surface grid from a 2D image shape, with configurable spacing.
 
-    Parameters:
-    -----------
-    image_shape : tuple of int
-        Shape of the 2D image (height, width) — used to determine max dimensions.
-    spacing_x : float
-        Distance between points along the X-axis (vertical direction).
-    spacing_theta : float
-        Arc-length spacing between points along the cylinder (horizontal direction).
-    radius : float
-        Radius of the cylinder.
-    origin_yz : tuple of float
-        Origin of the cylinder in (y0, z0) space (cylinder center axis in YZ-plane).
-
-    Returns:
-    --------
-    points_3d : np.ndarray
-        Sparse 3D points on the half-cylinder surface (N x 3).
-    """
     height, width = image_shape
     y0, z0 = origin_yz
 
-    # Total arc length for half-cylinder
-    arc_length = np.pi * radius
 
     # Determine number of points along each axis based on spacing
     num_points_theta = max(1, int(width) // spacing_theta)
@@ -341,6 +319,9 @@ def sparse_grid_on_half_cylinder(
     # Actual theta and x values
     theta = np.linspace(-np.pi / 2, np.pi / 2, num_points_theta)
     x = np.arange(0, num_points_x * spacing_x, spacing_x)
+    u_coords = np.round(np.linspace(0, width, num_points_theta))
+    uu, vv = np.meshgrid(u_coords, x)
+    uv_grid = np.stack((uu.ravel(), vv.ravel()), axis=-1)
 
     # Meshgrid (theta along horizontal, x along vertical)
     theta_grid, x_grid = np.meshgrid(theta, x)
@@ -352,7 +333,7 @@ def sparse_grid_on_half_cylinder(
     # Stack into final 3D point array
     points_3d = np.column_stack([z.ravel(), y.ravel(), x_grid.ravel()])
 
-    return points_3d
+    return points_3d, uv_grid
 
 def project_points_onto_convex_hull_mesh(
     mesh_points: np.ndarray,
@@ -450,16 +431,21 @@ if __name__ == "__main__":
     # half_sphere_points = points[points[:, 0] >= 0]
     max_r = round(vol_shape[1] / 2.0 * 1.15)
     uv_coords, points_on_cyl = project_to_cylinder(points, radius=max_r, origin_yz=(vol_shape[1]//2, 0))
-    grid_points = sparse_grid_on_half_cylinder((vol_shape[2], round(np.pi * max_r + 1)), radius=max_r, origin_yz=(vol_shape[1]//2, 0))
+    grid_points, uv_grid_coords = sparse_grid_on_half_cylinder((vol_shape[2], round(np.pi * max_r + 1)), radius=max_r, origin_yz=(vol_shape[1]//2, 0), spacing_theta=4, spacing_x=4)
     print("Grid points: ", len(grid_points))
     back_proj_grid = project_points_onto_convex_hull_mesh(points, grid_points)
+    points = back_proj_grid
+    uv_coords, points_on_cyl = project_to_cylinder(points, radius=max_r, origin_yz=(vol_shape[1]//2, 0))
+    # points = back_proj_grid
+    # uv_coords = uv_grid_coords
+    # points_on_cyl = grid_points
 
-    # neighbors = gpu_knn_search(points, k=32)
-    # distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
+    neighbors = gpu_knn_search(points, k=30)
+    distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
     # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
     # visualize_distortion_map(distortion_x, distortion_y)
-    # visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
+    visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
     # visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
     # visualize_3d_points(points, extra_points_zyx=points_on_cyl)
-    visualize_3d_points(back_proj_grid, extra_points_zyx=grid_points)
+    visualize_3d_points(points, extra_points_zyx=points_on_cyl)
