@@ -9,7 +9,7 @@ from scipy.stats import gaussian_kde
 import tifffile as tiff
 import open3d as o3d
 from scipy.spatial import ConvexHull
-
+from vedo import Points, Mesh, ConvexHull
 
 def project_to_cylinder(vertices, radius=1.0, origin_yz=(0, 0)):
     y0,z0 = origin_yz
@@ -300,6 +300,26 @@ def sample_surface_points_from_convex_hull(
     sampled_points = np.asarray(pcd.points)
     return sampled_points
 
+def refine_point_cloud_with_vedo(
+    point_cloud: np.ndarray,
+    n_subdivisions: int = 2,
+    n_smoothing_iterations: int = 15,
+) -> np.ndarray:
+
+    # Step 1: Compute convex hull from points
+    hull_mesh = ConvexHull(point_cloud)
+
+    # Step 2: Subdivide mesh to increase triangle density
+    refined_mesh = hull_mesh.subdivide(n_subdivisions, method=4, mel=7)
+
+    # Step 3: Smooth the mesh
+    refined_mesh = refined_mesh.smooth(niter=n_smoothing_iterations)
+
+    # Step 4: Return refined vertices as point cloud
+    refined_points = refined_mesh.points
+
+    return refined_points
+
 def sparse_grid_on_half_cylinder(
     image_shape,
     spacing_x=7,
@@ -396,7 +416,8 @@ if __name__ == "__main__":
     points = np.load("outs/hull_embryo_surface_points.npy")[:, [2, 1, 0]]
     print(f"Points z: {min(points[:, 0])} to {max(points[:, 0])}, y: {min(points[:, 1])} to {max(points[:, 1])}, x: {min(points[:, 2])} to {max(points[:, 2])}")
     print("Loaded points: ", len(points))
-    points = sample_surface_points_from_convex_hull(points, n_samples=5000)
+    # points = sample_surface_points_from_convex_hull(points, n_samples=5000)
+    points = refine_point_cloud_with_vedo(points, n_subdivisions=3, n_smoothing_iterations=10)
     if False:
         from scipy.spatial import ConvexHull
         import trimesh
@@ -424,27 +445,21 @@ if __name__ == "__main__":
     vol_shape = tiff.imread("outs/down_cropped_tp_300.tif").shape
     points[:,[0]] = vol_shape[0] - points[:,[0]] -1 # Flip z axis
     print(f"Points z: {min(points[:, 0])} to {max(points[:, 0])}, y: {min(points[:, 1])} to {max(points[:, 1])}, x: {min(points[:, 2])} to {max(points[:, 2])}")
-    points = points[points[:, 0] > min(points[:, 0])+1]
+    points = points[points[:, 0] > min(points[:, 0])+2]
     print(f"Volume shape: {vol_shape}")
     # points = random_points_on_sphere_normal(n_points=6000)
     # points = generate_meridian_points_vectorized()
     # half_sphere_points = points[points[:, 0] >= 0]
     max_r = round(vol_shape[1] / 2.0 * 1.15)
     uv_coords, points_on_cyl = project_to_cylinder(points, radius=max_r, origin_yz=(vol_shape[1]//2, 0))
-    grid_points, uv_grid_coords = sparse_grid_on_half_cylinder((vol_shape[2], round(np.pi * max_r + 1)), radius=max_r, origin_yz=(vol_shape[1]//2, 0), spacing_theta=4, spacing_x=4)
-    print("Grid points: ", len(grid_points))
-    back_proj_grid = project_points_onto_convex_hull_mesh(points, grid_points)
-    points = back_proj_grid
-    uv_coords, points_on_cyl = project_to_cylinder(points, radius=max_r, origin_yz=(vol_shape[1]//2, 0))
-    # points = back_proj_grid
-    # uv_coords = uv_grid_coords
-    # points_on_cyl = grid_points
+
 
     neighbors = gpu_knn_search(points, k=30)
     distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
+    visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
+
     # distortion_x, distortion_y = rasterize_distortion_map(uv_coords, distortions)
     # visualize_distortion_map(distortion_x, distortion_y)
-    visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
     # visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
     # visualize_3d_points(points, extra_points_zyx=points_on_cyl)
