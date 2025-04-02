@@ -98,38 +98,43 @@ def crop_rotated_3d_torch(image, center, size, rotation_matrix, device=None):
 
     input_dtype = convert_numpy_dtype_to_torch_dtype(image.dtype)
     # Move everything to torch
-    image_tensor = torch.from_numpy(image).to(torch.float32).unsqueeze(0).unsqueeze(0).to(device)  # (B=1, C=1, D, H, W)
+    image = image.astype(np.float32)
+    image_tensor = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).to(device)  # (1, 1, D, H, W)
     center = torch.tensor(center, dtype=torch.float32, device=device)
     rotation_matrix = torch.tensor(rotation_matrix, dtype=torch.float32, device=device)
 
     D, H, W = size
-    dz = torch.linspace(-D/2 + 0.5, D/2 - 0.5, D, device=device)
-    dy = torch.linspace(-H/2 + 0.5, H/2 - 0.5, H, device=device)
-    dx = torch.linspace(-W/2 + 0.5, W/2 - 0.5, W, device=device)
+    out_z, out_y, out_x = D, H, W
+    img_z, img_y, img_x = image.shape
+
+    # IMPORTANT: Construct target grid in pixel coordinates (not normalized!)
+    dz = torch.arange(D, dtype=torch.float32, device=device) - D // 2
+    dy = torch.arange(H, dtype=torch.float32, device=device) - H // 2
+    dx = torch.arange(W, dtype=torch.float32, device=device) - W // 2
     zz, yy, xx = torch.meshgrid(dz, dy, dx, indexing='ij')  # (D, H, W)
 
-    grid = torch.stack([zz, yy, xx], dim=-1).reshape(-1, 3)  # (D*H*W, 3)
+    local_coords = torch.stack([zz, yy, xx], dim=-1)  # (D, H, W, 3)
+    world_coords = torch.einsum('ij,dhwj->dhwi', rotation_matrix, local_coords) + center
 
-    # Apply rotation and translation
-    world_coords = grid @ rotation_matrix.T + center[None, :]
+    # Map world_coords (z,y,x) to PyTorch-normalized grid_sample coordinates (x_norm, y_norm, z_norm)
+    # align_corners=True: normalized_coord = 2 * index / (size - 1) - 1
+    grid = torch.empty_like(world_coords)
+    grid[..., 2] = 2.0 * world_coords[..., 0] / max(img_z - 1, 1) - 1.0  # Z → norm
+    grid[..., 1] = 2.0 * world_coords[..., 1] / max(img_y - 1, 1) - 1.0  # Y → norm
+    grid[..., 0] = 2.0 * world_coords[..., 2] / max(img_x - 1, 1) - 1.0  # X → norm
 
-    # Normalize to [-1, 1] for grid_sample
-    iz, iy, ix = image_tensor.shape[-3:]
-    norm_coords = torch.empty_like(world_coords)
-    norm_coords[:, 0] = 2.0 * world_coords[:, 2] / (ix - 1) - 1.0  # X
-    norm_coords[:, 1] = 2.0 * world_coords[:, 1] / (iy - 1) - 1.0  # Y
-    norm_coords[:, 2] = 2.0 * world_coords[:, 0] / (iz - 1) - 1.0  # Z
+    # Reshape grid for grid_sample
+    grid = grid.unsqueeze(0)  # (1, D, H, W, 3)
 
-    # Reshape for grid_sample
-    norm_coords = norm_coords.reshape(D, H, W, 3).unsqueeze(0)
-
-    # Rearrange grid axes for 3D grid_sample
-    norm_coords = norm_coords.permute(0, 4, 1, 2, 3)  # (B=1, 3, D, H, W)
-    norm_coords = norm_coords.permute(0, 2, 3, 4, 1)  # (B, D, H, W, 3)
-
-    # Sample the rotated crop
-    cropped = F.grid_sample(image_tensor, norm_coords, mode='nearest', align_corners=False, padding_mode='border')
-    result_uint8 = torch.round(cropped).clamp(0, torch.iinfo(input_dtype).max).to(input_dtype)
+    # Sample with NEAREST interpolation (matches order=0)
+    sampled = F.grid_sample(
+        image_tensor,
+        grid,
+        mode='nearest',           # true voxel sampling
+        padding_mode='border',    # match scipy.mode='nearest'
+        align_corners=True
+    )
+    result_uint8 = torch.round(sampled).clamp(0, torch.iinfo(input_dtype).max).to(input_dtype)
     return result_uint8.squeeze().cpu().numpy()
 
 def crop_rotated_3d(image, center, size, rotation_matrix, n_jobs=-1):
@@ -269,7 +274,7 @@ def crop_around_embryo(image_3d, mask, target_crop_shape=None) -> Optional[np.nd
         [0, np.sin(theta),  np.cos(theta)],
     ])
 
-    cropped = crop_rotated_3d_torch(image_3d, center, size, rotation_matrix)
+    cropped = crop_rotated_3d(image_3d, center, size, rotation_matrix)
     return cropped
     
 def cartesian_to_polar(volume: xpArray, origin, rho_res=1, theta_res=360, phi_res=180, phi_max=np.pi / 2) -> xpArray:
@@ -799,7 +804,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                 points = detect_embryo_surface_tubetracing(downsampled_zyx)
             case "wbns":
                 logging.info("Peeling: Using WBNS wavelet based background substraction for detecting only embryo structures.")
-                volume_mask_dilation_radius = -12
+                volume_mask_dilation_radius = -9
                 sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx, threshold=thresholding_after_wbns)
                 if prune_voxels_after_wbns:
                     from prune_volume import prune_volume
@@ -862,7 +867,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
     if do_save_z_max_projection:
         z_max_projection_dir = os.path.join(output_dir, "z_max_projection")
         os.makedirs(z_max_projection_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(z_max_projection_dir, f"tp_{timepoint}_z_max_projection.tif"), np.max(peeled_volume, axis=0).astype(np.uint8))
+        tiff.imwrite(os.path.join(z_max_projection_dir, f"tp_{timepoint}_z_max_projection.tif"), np.max(peeled_volume[:-12], axis=0).astype(np.uint8))
 
     if do_cylindrical_cartography:
         logging.info("Starting cylindrical cartography projection")
