@@ -24,22 +24,22 @@ flowchart TD
     maxProj1 --> thresh1
     thresh1 --> crop
     crop --> I("Downsample &amp; Isotropize") & J("Get Isotropic Volume")
-    I --> K("Peel Embryo with Cartography")
+    I --> K("Peel Embryo With Cartography")
     J --> K
     K --> N
     N{"Surface Detection Mode"}
-    N --> O("Surface detection based on Raycasting")
-    N --> P("Surface detection<br> based on WBNS")
-    O --> Q("Post-process & filter Surface Points")
+    N --> O("Surface Detection Based On Raycasting")
+    N --> P("Surface Detection<br> Based On WBNS")
+    O --> Q("Post-process & Filter Surface Points")
     P --> Q
-    Q --> qhull("Convex Hull & Binarize to mask")
-    qhull --> R("Subtract Mask from Volume")
-    R --> peeledVol@{ shape: procs, label: "Peeled Embryo" }
-    R --> dMapping("Back project point grid to embryo & calculate Jacobian")
-    dMapping --> distMap@{ shape: win-pane, label: "Cylindrical Cartography Distortion Map" }
-    R --> S("Cylindrical Cartography Projection")
-    S --> cartProj@{ shape: win-pane, label: "Cartography projection" }
-    peeledVol --> peeledZMax@{shape: win-pane, label: "Peeled Z-max<br>projection" }
+    Q --> qhull("Convex Hull & Binarize To Mask")
+    qhull --> R("Subtract Mask From Volume")
+    R --> peeledVol@{ shape: procs, label: "peeled embryo" }
+    R --> dMapping("Back Project Point Grid To Embryo & Calculate Jacobian")
+    dMapping --> distMap@{ shape: win-pane, label: "cylindrical cartography distortion map" }
+    peeledVol --> S("Cylindrical Cartography Projection")
+    S --> cartProj@{ shape: win-pane, label: "cartography projection" }
+    peeledVol --> peeledZMax@{shape: win-pane, label: "peeled Z-max<br>projection" }
 ```
 ### Filtering for embryo structures using WBNS for embryo surface detection
 ![alt text](figures/embryo_structure_detection_WBNS.png)
