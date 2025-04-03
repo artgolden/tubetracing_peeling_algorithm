@@ -772,122 +772,6 @@ def detect_embryo_surface_wbns(volume: np.ndarray, threshold: str=None):
 
     return (eroded_mask, substracted_bkg)
 
-def peel_embryo_with_cartography(full_res_zyx: np.ndarray, 
-                                 downsampled_zyx: np.ndarray, 
-                                 output_dir:str, 
-                                 timepoint:int,
-                                 peeling_mask: np.ndarray=None,
-                                 surface_detection_mode:str = "wbns",
-                                 thresholding_after_wbns:str = None,
-                                 do_cylindrical_cartography=True,
-                                 prune_voxels_after_wbns=True,
-                                 remove_outliers_after_wbns=True,
-                                 do_save_points=True, 
-                                 do_save_peeled_volume=True,
-                                 do_save_z_max_projection=True,
-                                 do_save_mask=True,
-                                 do_save_wbns_output=True) -> bool:
-    logging.info("Starting peel_embryo_with_cartography")
-    
-
-    xp = Backend.get_xp_module()
-    sp = Backend.get_sp_module()
-
-    if not isinstance(peeling_mask, np.ndarray):
-        volume_mask_dilation_radius = 3
-        match surface_detection_mode:
-            case "tubetracing":
-                downsampled_zyx = Backend.to_backend(downsampled_zyx)
-                downsampled_zyx = downsampled_zyx[::-1, :, :]
-                logging.info("Peeling: Using tubetracing")
-                volume_mask_dilation_radius = 3
-                points = detect_embryo_surface_tubetracing(downsampled_zyx)
-            case "wbns":
-                logging.info("Peeling: Using WBNS wavelet based background substraction for detecting only embryo structures.")
-                volume_mask_dilation_radius = -9
-                sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx, threshold=thresholding_after_wbns)
-                if prune_voxels_after_wbns:
-                    from prune_volume import prune_volume
-                    logging.info("Pruining volume after WBNS")
-                    sparce_voxels_on_embryo_surface = prune_volume(sparce_voxels_on_embryo_surface)
-                if remove_outliers_after_wbns:
-                    from remove_outliers_volume_mask import remove_outliers
-                    logging.info("Removing outliers (expected dirt) after WBNS")
-                    sparce_voxels_on_embryo_surface = remove_outliers(sparce_voxels_on_embryo_surface)
-                points = np.transpose(np.where(sparce_voxels_on_embryo_surface))
-                if do_save_wbns_output:
-                    output_dir_wbns = os.path.join(output_dir, "wbns_output")
-                    os.makedirs(output_dir_wbns, exist_ok=True)
-                    tiff.imwrite(os.path.join(output_dir_wbns, f"tp_{timepoint}_wbns_background_removed.tif"), only_structures_wbns)
-                if do_save_points:
-                    points_dir = os.path.join(output_dir, "surface_voxels_mask")
-                    os.makedirs(points_dir, exist_ok=True)
-                    tiff.imwrite(os.path.join(points_dir, f"tp_{timepoint}_wbns_surface_voxels_true.tif"), sparce_voxels_on_embryo_surface)
-                    do_save_points = False
-
-        print(f"Number of detected points: {len(points)}")
-        logging.debug(f"Number of detected points: {len(points)}")
-        if len(points) > 300000:
-            logging.error("Too many points detected. This is likely due to a bad surface segmentation. Embryo peeling failed.")
-            return False, False
-
-        points = add_projected_embryo_outline_points(downsampled_zyx.shape, points)
-        if do_save_points:
-            points_dir = os.path.join(output_dir, "surface_points")
-            os.makedirs(points_dir, exist_ok=True)
-            np.save(os.path.join(points_dir, f"tp_{timepoint}_surface_points.npy"), points)
-
-        # Create a volume mask from the points
-        logging.info("Peeling: Converting points to mask")
-        mask = points_to_convex_hull_volume_mask(points, downsampled_zyx.shape, dilation_radius=volume_mask_dilation_radius)
-
-        logging.debug(f"Mask shape: {mask.shape}, converting mask to numpy and transposing.")
-        mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
-        logging.debug(f"Upscaling mask")
-        mask_upscaled = upscale_mask(mask_np, full_res_zyx.shape)
-        if do_save_mask:
-            logging.debug(f"Saving masks to disk")
-            mask_dir = os.path.join(output_dir, "substraction_embryo_mask")
-            os.makedirs(mask_dir, exist_ok=True)
-            tiff.imwrite(os.path.join(mask_dir, f"tp_{timepoint}_mask.tif"), mask_np)
-            np.save(os.path.join(mask_dir, f"tp_{timepoint}_upscaled_mask.npy"), mask_upscaled)
-    else: 
-        logging.info("Peeling: Using provided mask")
-        print("Peeling: Using provided mask")
-        mask_upscaled = peeling_mask
-
-    # Subtract the mask from the embryo volume
-    logging.info("Peeling: Substracting mask from embryo volume")
-    peeled_volume = substract_mask_from_embryo_volume(full_res_zyx, mask_upscaled)
-    if do_save_peeled_volume:
-        peeled_volume_dir = os.path.join(output_dir, "peeled_volume")
-        os.makedirs(peeled_volume_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(peeled_volume_dir, f"tp_{timepoint}_peeled_volume.tif"), peeled_volume.astype(np.uint8))
-
-    if do_save_z_max_projection:
-        z_max_projection_dir = os.path.join(output_dir, "z_max_projection")
-        os.makedirs(z_max_projection_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(z_max_projection_dir, f"tp_{timepoint}_z_max_projection.tif"), np.max(peeled_volume[:-12], axis=0).astype(np.uint8))
-
-    if do_cylindrical_cartography:
-        logging.info("Starting cylindrical cartography projection")
-        # Do a cylindrical cartography projection of the peeled volume
-        reduce_ratio = 1 / RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO
-        _, y_size, x_size = peeled_volume.shape
-        x_crop = int(x_size - x_size * reduce_ratio) // 2
-        y_crop = int(y_size - y_size * reduce_ratio) // 2
-        peeled_volume = Backend.to_backend(peeled_volume, dtype=xp.float16)[::-1,:,:]
-        peeled_volume = peeled_volume[:, y_crop:-y_crop, x_crop:-x_crop]
-        logging.debug(f"Peeled volume origin coordinates: {get_origin(peeled_volume)}, x and y crop: {x_crop}, {y_crop}, shape: {peeled_volume.shape}")
-        cylindrical_projection = cylindrical_cartography_projection(peeled_volume, get_origin(peeled_volume))
-        projection_cpu = Backend.to_numpy(cylindrical_projection, dtype=np.uint8)
-
-        cartography_dir = os.path.join(output_dir, "cylindrical_cartography")
-        os.makedirs(cartography_dir, exist_ok=True)
-        cartography_file = os.path.join(cartography_dir, f"tp_{timepoint}_cyl_proj.tif")
-        tiff.imwrite(cartography_file, projection_cpu)
-    return True, mask_upscaled
-
 def load_and_merge_illuminations(ill_file_paths: list[str]):
     images = [load_3d_volume(f) for f in ill_file_paths]
     assert len(images) < 3 # There should be no more than 2 illuminations possible for each volume
@@ -980,121 +864,6 @@ def group_files(file_list):
         series_dict[key].setdefault(tp, []).append(f)
     return series_dict
 
-def process_timepoint(ill_file_paths: list, 
-                      output_dir: str, 
-                      timepoint: int,
-                      compute_backend: Backend,
-                      target_crop_shape=None,
-                      peeling_mask=None,
-                      thresholding_after_wbns=None,
-                      do_save_thresholding_mask=True,
-                      do_save_down_cropped=True,
-                      do_save_cropped_iso=True):
-
-    logging.info(f"Processing timepoint with files: {ill_file_paths}")
-    print(f"Processing timepoint {timepoint}")
-    
-    # Merge illuminations for the timepoint
-    merged_volume = load_and_merge_illuminations(ill_file_paths)
-    if merged_volume is None:
-        logging.error(f"Error loading merged volume for files: {ill_file_paths}")
-        return None
-
-    # Threshold to get mask
-    mask = threshold_image_xy(merged_volume)
-    if do_save_thresholding_mask:
-        mask_dir = os.path.join(output_dir, "thresholding_mask")
-        os.makedirs(mask_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(mask_dir, f"thresholding_mask_tp_{timepoint}.tif"), mask)
-    # Crop around embryo. For the first timepoint, we call without target_crop_shape.
-    # For subsequent timepoints, crop_around_embryo should use the provided target shape.
-    if target_crop_shape is None:
-        cropped_volume = crop_around_embryo(merged_volume, mask)
-    else:
-        cropped_volume = crop_around_embryo(merged_volume, mask, target_crop_shape)
-    
-    if cropped_volume is None:
-        logging.error(f"Error segmenting and cropping around embryo for files: {ill_file_paths}")
-        return None
-    cropped_vol_shape = cropped_volume.shape   
-    logging.info(f"TP: {timepoint} Cropped volume shape: {cropped_vol_shape}")
-    print(f"TP: {timepoint} Cropped volume shape: {cropped_vol_shape}")
-    
-    down_cropped = get_downsampled_and_isotropic(cropped_volume)
-    if do_save_down_cropped:
-        down_dir = os.path.join(output_dir, "downsampled_cropped")
-        os.makedirs(down_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(down_dir, f"down_cropped_tp_{timepoint}.tif"), down_cropped)
-    
-    full_res_iso = get_isotropic_volume(cropped_volume)
-    if do_save_cropped_iso:
-        iso_dir = os.path.join(output_dir, "cropped_isotropic_embryo")
-        os.makedirs(iso_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(iso_dir, f"cropped_isotropic_tp_{timepoint}.tif"), full_res_iso)
-    
-
-    peel_success, peeling_mask_curr_tp = peel_embryo_with_cartography(full_res_iso, 
-                                                              down_cropped, 
-                                                              output_dir, 
-                                                              timepoint, 
-                                                              peeling_mask=peeling_mask,
-                                                              thresholding_after_wbns=thresholding_after_wbns)
-    if not peel_success:
-        logging.error(f"Error peeling embryo. Aborting processing this timepoint")
-        compute_backend.clear_memory_pool()
-        return None, None
-    with contextlib.redirect_stdout(io.StringIO()) as captured_output:
-        compute_backend.clear_memory_pool()
-    logging.info(captured_output.getvalue())
-    return cropped_vol_shape, peeling_mask_curr_tp
-
-def process_time_series(timeseries_key: str, 
-                        timepoints_dict: dict, 
-                        base_out_dir: str, 
-                        compute_backend: Backend,
-                        reuse_peeling_mask: bool,
-                        thresholding_after_wbns=None):
-    """
-    Process a single time series.
-    
-    Parameters:
-      timeseries_key: unique identifier for the time series
-      timepoints_dict: dictionary with keys as timepoint integers and values as list of file paths
-      base_out_dir: base output folder where time series folders are created
-    """
-    series_out_dir = os.path.join(base_out_dir, 
-                            timeseries_key)
-    os.makedirs(series_out_dir, exist_ok=True)
-    logging.info(f"Processing time series: {timeseries_key}")
-    print(f"Processing time series: {timeseries_key}")
-    
-    # Process timepoints in ascending order
-    sorted_timepoints = sorted(timepoints_dict.keys())
-    target_crop_shape = None  # will be set by the first processed timepoint
-    peeling_mask_whole_series = None
-
-    # Use tqdm to show progress for this time series
-    for tp in tqdm(sorted_timepoints, desc=f"Series {timeseries_key}", unit="timepoint"):
-        print("")
-        tp_files = timepoints_dict[tp]
-        crop_shape, peeling_mask_curr_tp = process_timepoint(tp_files, 
-                                                             series_out_dir, 
-                                                             tp, 
-                                                             compute_backend, 
-                                                             target_crop_shape=target_crop_shape, 
-                                                             peeling_mask=peeling_mask_whole_series,
-                                                             thresholding_after_wbns=thresholding_after_wbns)
-        if crop_shape is None:
-            logging.error(f"Error processing timepoint {tp}. Aborting processing this time series")
-            return
-        if reuse_peeling_mask and peeling_mask_whole_series is None:
-            logging.info(f"Reusing peeling mask from first timepoint in the series.")
-            print(f"Reusing peeling mask from first timepoint in the series.")
-            peeling_mask_whole_series = peeling_mask_curr_tp
-        # Save crop shape from first timepoint and use for subsequent timepoints
-        if target_crop_shape is None and crop_shape is not None:
-            target_crop_shape = crop_shape
-
 def get_git_commit_hash(script_path):
     """
     Retrieves the current Git commit hash for the given script.
@@ -1164,6 +933,270 @@ def copy_script_with_commit_hash(output_dir):
     except Exception as e:
         print(f"Warning: could not copy source code of the script: {e}")
 
+def peel_embryo_with_cartography(full_res_zyx: np.ndarray, 
+                                 downsampled_zyx: np.ndarray, 
+                                 output_dir: str, 
+                                 timepoint: int,
+                                 peeling_mask: np.ndarray = None,
+                                 surface_detection_mode: str = "wbns",
+                                 thresholding_after_wbns: str = None,
+                                 do_cylindrical_cartography=True,
+                                 prune_voxels_after_wbns=True,
+                                 remove_outliers_after_wbns=True,
+                                 do_save_points=True, 
+                                 do_save_peeled_volume=True,
+                                 do_save_z_max_projection=True,
+                                 do_save_mask=True,
+                                 do_save_wbns_output=True,
+                                 load_surface_voxels_from_file: bool = False) -> bool:
+    logging.info("Starting peel_embryo_with_cartography")
+    xp = Backend.get_xp_module()
+    sp = Backend.get_sp_module()
+
+    if not isinstance(peeling_mask, np.ndarray):
+        volume_mask_dilation_radius = 3
+        match surface_detection_mode:
+            case "tubetracing":
+                downsampled_zyx = Backend.to_backend(downsampled_zyx)
+                downsampled_zyx = downsampled_zyx[::-1, :, :]
+                logging.info("Peeling: Using tubetracing")
+                volume_mask_dilation_radius = 3
+                points = detect_embryo_surface_tubetracing(downsampled_zyx)
+            case "wbns":
+                volume_mask_dilation_radius = -9
+                if load_surface_voxels_from_file:
+                    # Check if the file with the precomputed surface voxels exists.
+                    points_dir = os.path.join(output_dir, "surface_voxels_mask")
+                    file_path = os.path.join(points_dir, f"tp_{timepoint}_wbns_surface_voxels_true.tif")
+                    if os.path.exists(file_path):
+                        logging.info(f"Peeling: Loading sparce_voxels_on_embryo_surface from file: {file_path}")
+                        sparce_voxels_on_embryo_surface = tiff.imread(file_path)
+                        points = np.transpose(np.where(sparce_voxels_on_embryo_surface))
+                    else:
+                        logging.warning(f"Peeling: File {file_path} not found. Falling back to WBNS detection.")
+                        sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx, threshold=thresholding_after_wbns)
+                        if prune_voxels_after_wbns:
+                            from prune_volume import prune_volume
+                            logging.info("Pruning volume after WBNS")
+                            sparce_voxels_on_embryo_surface = prune_volume(sparce_voxels_on_embryo_surface)
+                        if remove_outliers_after_wbns:
+                            from remove_outliers_volume_mask import remove_outliers
+                            logging.info("Removing outliers (expected dirt) after WBNS")
+                            sparce_voxels_on_embryo_surface = remove_outliers(sparce_voxels_on_embryo_surface)
+                        points = np.transpose(np.where(sparce_voxels_on_embryo_surface))
+                        if do_save_wbns_output:
+                            output_dir_wbns = os.path.join(output_dir, "wbns_output")
+                            os.makedirs(output_dir_wbns, exist_ok=True)
+                            tiff.imwrite(os.path.join(output_dir_wbns, f"tp_{timepoint}_wbns_background_removed.tif"), only_structures_wbns)
+                else:
+                    logging.info("Peeling: Using WBNS wavelet based background subtraction for detecting only embryo structures.")
+                    sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx, threshold=thresholding_after_wbns)
+                    if prune_voxels_after_wbns:
+                        from prune_volume import prune_volume
+                        logging.info("Pruning volume after WBNS")
+                        sparce_voxels_on_embryo_surface = prune_volume(sparce_voxels_on_embryo_surface)
+                    if remove_outliers_after_wbns:
+                        from remove_outliers_volume_mask import remove_outliers
+                        logging.info("Removing outliers (expected dirt) after WBNS")
+                        sparce_voxels_on_embryo_surface = remove_outliers(sparce_voxels_on_embryo_surface)
+                    points = np.transpose(np.where(sparce_voxels_on_embryo_surface))
+                    if do_save_wbns_output:
+                        output_dir_wbns = os.path.join(output_dir, "wbns_output")
+                        os.makedirs(output_dir_wbns, exist_ok=True)
+                        tiff.imwrite(os.path.join(output_dir_wbns, f"tp_{timepoint}_wbns_background_removed.tif"), only_structures_wbns)
+                if do_save_points:
+                    # Only save the points file if it was computed (not loaded)
+                    if not load_surface_voxels_from_file:
+                        points_dir = os.path.join(output_dir, "surface_voxels_mask")
+                        os.makedirs(points_dir, exist_ok=True)
+                        tiff.imwrite(os.path.join(points_dir, f"tp_{timepoint}_wbns_surface_voxels_true.tif"), sparce_voxels_on_embryo_surface)
+                    do_save_points = False
+
+        print(f"Number of detected points: {len(points)}")
+        logging.debug(f"Number of detected points: {len(points)}")
+        if len(points) > 300000:
+            logging.error("Too many points detected. This is likely due to a bad surface segmentation. Embryo peeling failed.")
+            return False, False
+
+        points = add_projected_embryo_outline_points(downsampled_zyx.shape, points)
+        if do_save_points:
+            points_dir = os.path.join(output_dir, "surface_points")
+            os.makedirs(points_dir, exist_ok=True)
+            np.save(os.path.join(points_dir, f"tp_{timepoint}_surface_points.npy"), points)
+
+        # Create a volume mask from the points
+        logging.info("Peeling: Converting points to mask")
+        mask = points_to_convex_hull_volume_mask(points, downsampled_zyx.shape, dilation_radius=volume_mask_dilation_radius)
+
+        logging.debug(f"Mask shape: {mask.shape}, converting mask to numpy and transposing.")
+        mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
+        logging.debug(f"Upscaling mask")
+        mask_upscaled = upscale_mask(mask_np, full_res_zyx.shape)
+        if do_save_mask:
+            logging.debug(f"Saving masks to disk")
+            mask_dir = os.path.join(output_dir, "substraction_embryo_mask")
+            os.makedirs(mask_dir, exist_ok=True)
+            tiff.imwrite(os.path.join(mask_dir, f"tp_{timepoint}_mask.tif"), mask_np)
+            np.save(os.path.join(mask_dir, f"tp_{timepoint}_upscaled_mask.npy"), mask_upscaled)
+    else: 
+        logging.info("Peeling: Using provided mask")
+        print("Peeling: Using provided mask")
+        mask_upscaled = peeling_mask
+
+    # Subtract the mask from the embryo volume
+    logging.info("Peeling: Substracting mask from embryo volume")
+    peeled_volume = substract_mask_from_embryo_volume(full_res_zyx, mask_upscaled)
+    if do_save_peeled_volume:
+        peeled_volume_dir = os.path.join(output_dir, "peeled_volume")
+        os.makedirs(peeled_volume_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(peeled_volume_dir, f"tp_{timepoint}_peeled_volume.tif"), peeled_volume.astype(np.uint8))
+
+    if do_save_z_max_projection:
+        z_max_projection_dir = os.path.join(output_dir, "z_max_projection")
+        os.makedirs(z_max_projection_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(z_max_projection_dir, f"tp_{timepoint}_z_max_projection.tif"), np.max(peeled_volume[:-12], axis=0).astype(np.uint8))
+
+    if do_cylindrical_cartography:
+        logging.info("Starting cylindrical cartography projection")
+        reduce_ratio = 1 / RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO
+        _, y_size, x_size = peeled_volume.shape
+        x_crop = int(x_size - x_size * reduce_ratio) // 2
+        y_crop = int(y_size - y_size * reduce_ratio) // 2
+        peeled_volume = Backend.to_backend(peeled_volume, dtype=xp.float16)[::-1, :, :]
+        peeled_volume = peeled_volume[:, y_crop:-y_crop, x_crop:-x_crop]
+        logging.debug(f"Peeled volume origin coordinates: {get_origin(peeled_volume)}, x and y crop: {x_crop}, {y_crop}, shape: {peeled_volume.shape}")
+        cylindrical_projection = cylindrical_cartography_projection(peeled_volume, get_origin(peeled_volume))
+        projection_cpu = Backend.to_numpy(cylindrical_projection, dtype=np.uint8)
+
+        cartography_dir = os.path.join(output_dir, "cylindrical_cartography")
+        os.makedirs(cartography_dir, exist_ok=True)
+        cartography_file = os.path.join(cartography_dir, f"tp_{timepoint}_cyl_proj.tif")
+        tiff.imwrite(cartography_file, projection_cpu)
+    return True, mask_upscaled
+
+
+def process_timepoint(ill_file_paths: list, 
+                      output_dir: str, 
+                      timepoint: int,
+                      compute_backend: Backend,
+                      target_crop_shape=None,
+                      peeling_mask=None,
+                      thresholding_after_wbns=None,
+                      do_save_thresholding_mask=True,
+                      do_save_down_cropped=True,
+                      do_save_cropped_iso=True,
+                      load_surface_voxels_from_file: bool = False):
+    logging.info(f"Processing timepoint with files: {ill_file_paths}")
+    print(f"Processing timepoint {timepoint}")
+    
+    # Merge illuminations for the timepoint
+    merged_volume = load_and_merge_illuminations(ill_file_paths)
+    if merged_volume is None:
+        logging.error(f"Error loading merged volume for files: {ill_file_paths}")
+        return None
+
+    # Threshold to get mask
+    mask = threshold_image_xy(merged_volume)
+    if do_save_thresholding_mask:
+        mask_dir = os.path.join(output_dir, "thresholding_mask")
+        os.makedirs(mask_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(mask_dir, f"thresholding_mask_tp_{timepoint}.tif"), mask)
+    # Crop around embryo. For the first timepoint, we call without target_crop_shape.
+    # For subsequent timepoints, crop_around_embryo should use the provided target shape.
+    if target_crop_shape is None:
+        cropped_volume = crop_around_embryo(merged_volume, mask)
+    else:
+        cropped_volume = crop_around_embryo(merged_volume, mask, target_crop_shape)
+    
+    if cropped_volume is None:
+        logging.error(f"Error segmenting and cropping around embryo for files: {ill_file_paths}")
+        return None
+    cropped_vol_shape = cropped_volume.shape   
+    logging.info(f"TP: {timepoint} Cropped volume shape: {cropped_vol_shape}")
+    print(f"TP: {timepoint} Cropped volume shape: {cropped_vol_shape}")
+    
+    down_cropped = get_downsampled_and_isotropic(cropped_volume)
+    if do_save_down_cropped:
+        down_dir = os.path.join(output_dir, "downsampled_cropped")
+        os.makedirs(down_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(down_dir, f"down_cropped_tp_{timepoint}.tif"), down_cropped)
+    
+    full_res_iso = get_isotropic_volume(cropped_volume)
+    if do_save_cropped_iso:
+        iso_dir = os.path.join(output_dir, "cropped_isotropic_embryo")
+        os.makedirs(iso_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(iso_dir, f"cropped_isotropic_tp_{timepoint}.tif"), full_res_iso)
+    
+    peel_success, peeling_mask_curr_tp = peel_embryo_with_cartography(
+        full_res_iso, 
+        down_cropped, 
+        output_dir, 
+        timepoint, 
+        peeling_mask=peeling_mask,
+        thresholding_after_wbns=thresholding_after_wbns,
+        load_surface_voxels_from_file=load_surface_voxels_from_file
+    )
+    if not peel_success:
+        logging.error(f"Error peeling embryo. Aborting processing this timepoint")
+        compute_backend.clear_memory_pool()
+        return None, None
+    with contextlib.redirect_stdout(io.StringIO()) as captured_output:
+        compute_backend.clear_memory_pool()
+    logging.info(captured_output.getvalue())
+    return cropped_vol_shape, peeling_mask_curr_tp
+
+
+def process_time_series(timeseries_key: str, 
+                        timepoints_dict: dict, 
+                        base_out_dir: str, 
+                        compute_backend: Backend,
+                        reuse_peeling_mask: bool,
+                        thresholding_after_wbns=None,
+                        load_surface_voxels_from_file: bool = False):
+    """
+    Process a single time series.
+    
+    Parameters:
+      timeseries_key: unique identifier for the time series
+      timepoints_dict: dictionary with keys as timepoint integers and values as list of file paths
+      base_out_dir: base output folder where time series folders are created
+    """
+    series_out_dir = os.path.join(base_out_dir, timeseries_key)
+    os.makedirs(series_out_dir, exist_ok=True)
+    logging.info(f"Processing time series: {timeseries_key}")
+    print(f"Processing time series: {timeseries_key}")
+    
+    # Process timepoints in ascending order
+    sorted_timepoints = sorted(timepoints_dict.keys())
+    target_crop_shape = None  # will be set by the first processed timepoint
+    peeling_mask_whole_series = None
+
+    # Use tqdm to show progress for this time series
+    for tp in tqdm(sorted_timepoints, desc=f"Series {timeseries_key}", unit="timepoint"):
+        print("")
+        tp_files = timepoints_dict[tp]
+        crop_shape, peeling_mask_curr_tp = process_timepoint(
+            tp_files, 
+            series_out_dir, 
+            tp, 
+            compute_backend, 
+            target_crop_shape=target_crop_shape, 
+            peeling_mask=peeling_mask_whole_series,
+            thresholding_after_wbns=thresholding_after_wbns,
+            load_surface_voxels_from_file=load_surface_voxels_from_file
+        )
+        if crop_shape is None:
+            logging.error(f"Error processing timepoint {tp}. Aborting processing this time series")
+            return
+        if reuse_peeling_mask and peeling_mask_whole_series is None:
+            logging.info(f"Reusing peeling mask from first timepoint in the series.")
+            print(f"Reusing peeling mask from first timepoint in the series.")
+            peeling_mask_whole_series = peeling_mask_curr_tp
+        # Save crop shape from first timepoint and use for subsequent timepoints
+        if target_crop_shape is None and crop_shape is not None:
+            target_crop_shape = crop_shape
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Process a folder of 3D embryo TIF images: group them into time series, "
@@ -1178,6 +1211,8 @@ def main():
     parser.add_argument("--force_cpu", action="store_true", help="Force execution on CPU only.")
     parser.add_argument("--skip_patterns", type=str, nargs='*', default=[], 
                         help="List of patterns; time series whose keys contain any of these will be skipped.")
+    parser.add_argument("--load_surface_voxels", action="store_true", 
+                        help="If set, load sparce_voxels_on_embryo_surface from file if available and skip WBNS detection and saving of only_structures_wbns.")
     args = parser.parse_args()
     
     input_folder = args.input_folder
@@ -1208,7 +1243,6 @@ def main():
     if args.force_cpu:
         logging_broadcast("--force_cpu argument is set: Forcing execution only on CPU.")
      
-
     with (NumpyBackend() if args.force_cpu else BestBackend(device_id=device_id)) as compute_backend:
         # Find all TIF files in the input folder
         tif_files = [
@@ -1236,10 +1270,19 @@ def main():
             if any(pattern in series_key for pattern in args.skip_patterns):
                 logging_broadcast(f"Skipping time series '{series_key}' due to matching skip pattern {args.skip_patterns}")
                 continue
-            process_time_series(series_key, tp_dict, output_folder, compute_backend, args.reuse_peeling, args.wbns_threshold)
+            process_time_series(
+                series_key, 
+                tp_dict, 
+                output_folder, 
+                compute_backend, 
+                args.reuse_peeling, 
+                args.wbns_threshold,
+                args.load_surface_voxels
+            )
         
         logging.info("Processing complete")
         print("Processing complete.")
+
 
 if __name__ == "__main__":
     main()
