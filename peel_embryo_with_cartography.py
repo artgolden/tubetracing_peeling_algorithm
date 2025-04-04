@@ -988,6 +988,9 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                             output_dir_wbns = os.path.join(output_dir, "wbns_output")
                             os.makedirs(output_dir_wbns, exist_ok=True)
                             tiff.imwrite(os.path.join(output_dir_wbns, f"tp_{timepoint}_wbns_background_removed.tif"), only_structures_wbns)
+                        points_dir = os.path.join(output_dir, "surface_voxels_mask")
+                        os.makedirs(points_dir, exist_ok=True)
+                        tiff.imwrite(os.path.join(points_dir, f"tp_{timepoint}_wbns_surface_voxels_true.tif"), sparce_voxels_on_embryo_surface)
                 else:
                     logging.info("Peeling: Using WBNS wavelet based background subtraction for detecting only embryo structures.")
                     sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx, threshold=thresholding_after_wbns)
