@@ -117,10 +117,12 @@ cylinder_points_zyx = sparse_grid_on_half_cylinder(
 )
 
 # Convert ZYX to XYZ for processing
-surface_points = torch.tensor(cylinder_points_zyx[:, [2, 1, 0]], dtype=torch.float32)
+surface_points = torch.tensor(cylinder_points_zyx, dtype=torch.float32)
 
 # Ray directions and origins
-ray_origins = torch.zeros_like(surface_points)  # All rays from center axis (0, 0, 0)
+ray_origins = surface_points.clone()
+ray_origins[:, 1] = vol_shape[1] // 2  # Set Y to center of volume
+ray_origins[:, 0] = 0  # Set Z to 0
 ray_directions = torch.nn.functional.normalize(surface_points - ray_origins, dim=1)
 
 # Perform ray-mesh intersection
