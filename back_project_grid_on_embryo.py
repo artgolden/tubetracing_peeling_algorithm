@@ -5,8 +5,7 @@ import matplotlib.pyplot as plt
 import tifffile as tiff
 
 from pytorch3d.structures import Meshes
-from pytorch3d.ops import ray_mesh_intersect
-
+from trimesh.ray.ray_pyembree import RayMeshIntersector
 
 
 def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_points_idx=None, extra_points_zyx=None, title="Original 3D Points"):
@@ -45,32 +44,27 @@ def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_po
     plt.tight_layout()
     plt.show()
 
-def load_mesh_from_point_cloud(npy_path):
+def load_mesh_from_point_cloud(npy_path, vol_shape):
     """
     Load a point cloud from a .npy file and compute the convex hull mesh.
-    Returns a PyTorch3D Mesh.
+    Returns a Trimesh mesh.
     """
     points = np.load(npy_path)[:, [2, 1, 0]]
+    points[:,[0]] = vol_shape[0] - points[:,[0]] -1 # Flip z axis
     cloud = trimesh.points.PointCloud(points)
     mesh = cloud.convex_hull
-    verts = torch.tensor(mesh.vertices, dtype=torch.float32).unsqueeze(0)
-    faces = torch.tensor(mesh.faces, dtype=torch.int64).unsqueeze(0)
-    return Meshes(verts=verts, faces=faces).to("cuda")
+    return mesh, points
 
 
-def perform_ray_mesh_intersection(mesh_p3d, ray_origins, ray_directions, max_hits=1):
-    ray_lengths, hit_faces, bary_coords = ray_mesh_intersect(
-        meshes=mesh_p3d,
-        rays_origins=ray_origins,
-        rays_directions=ray_directions,
-        max_hits=max_hits
+def perform_ray_mesh_intersection(mesh, ray_origins, ray_directions):
+    """
+    Use trimesh's RayMeshIntersector to compute ray-mesh intersections.
+    """
+    intersector = RayMeshIntersector(mesh)
+    locations, index_ray, index_tri = intersector.intersects_location(
+        ray_origins.cpu().numpy(), ray_directions.cpu().numpy(), multiple_hits=False
     )
-    mask = ray_lengths[0][:, 0] > 0
-    hit_lengths = ray_lengths[0][mask]
-    hit_dirs = ray_directions[0][mask]
-    hit_origins = ray_origins[0][mask]
-    hit_points = hit_origins + hit_dirs * hit_lengths
-    return hit_points
+    return locations
 
 
 def sparse_grid_on_half_cylinder(
@@ -97,20 +91,20 @@ def sparse_grid_on_half_cylinder(
     points_3d = np.column_stack([z.ravel(), y.ravel(), x_grid.ravel()])
     return points_3d
 
-
-# Load mesh from point cloud .npy file
-mesh_p3d = load_mesh_from_point_cloud("outs/hull_embryo_surface_points.npy")
-
 # Get image volume shape
 vol_shape = tiff.imread("outs/down_cropped_tp_300.tif").shape
 print(f"Volume shape: {vol_shape}")
 max_r = round(vol_shape[1] / 2.0 * 1.15)
 
+# Load mesh from point cloud .npy file
+mesh, point_cloud = load_mesh_from_point_cloud("outs/hull_embryo_surface_points.npy", vol_shape)
+
+
 # Generate grid points on half-cylinder surface
 image_shape = (vol_shape[2], round(np.pi * max_r + 1))
 cylinder_radius = max_r
-spacing_x = 4
-spacing_theta = 4
+spacing_x = 10
+spacing_theta = 10
 cylinder_points_zyx = sparse_grid_on_half_cylinder(
     image_shape=image_shape,
     spacing_x=spacing_x,
@@ -126,15 +120,11 @@ surface_points = torch.tensor(cylinder_points_zyx[:, [2, 1, 0]], dtype=torch.flo
 ray_origins = torch.zeros_like(surface_points)  # All rays from center axis (0, 0, 0)
 ray_directions = torch.nn.functional.normalize(surface_points - ray_origins, dim=1)
 
-# Reshape for batch ray casting
-ray_origins = ray_origins.unsqueeze(0).to("cuda")       # (1, N, 3)
-ray_directions = ray_directions.unsqueeze(0).to("cuda") # (1, N, 3)
-
 # Perform ray-mesh intersection
-hit_points = perform_ray_mesh_intersection(mesh_p3d, ray_origins, ray_directions)
+hit_points = perform_ray_mesh_intersection(mesh, ray_origins, ray_directions)
 
 # Print or export intersection points
 print("Total Intersections:", hit_points.shape[0])
-hit_points = hit_points.cpu().numpy()
+hit_points = np.array(hit_points)
 
-visualize_3d_points(hit_points, extra_points_zyx=cylinder_points_zyx)
+visualize_3d_points(point_cloud, extra_points_zyx=cylinder_points_zyx)
