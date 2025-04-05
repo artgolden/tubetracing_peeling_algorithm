@@ -62,12 +62,16 @@ def load_mesh_from_point_cloud(npy_path, vol_shape):
 def perform_ray_mesh_intersection(mesh, ray_origins, ray_directions):
     """
     Use trimesh's RayMeshIntersector to compute ray-mesh intersections.
+    Returns an array of hit points with same shape as ray_origins, with NaNs for no-hit rays.
     """
     intersector = RayMeshIntersector(mesh)
     locations, index_ray, index_tri = intersector.intersects_location(
         ray_origins.cpu().numpy(), ray_directions.cpu().numpy(), multiple_hits=False
     )
-    return locations
+
+    result = np.full((ray_origins.shape[0], 3), np.nan, dtype=np.float32)
+    result[index_ray] = locations
+    return result
 
 
 def sparse_grid_on_half_cylinder(
@@ -129,7 +133,8 @@ ray_directions = torch.nn.functional.normalize(surface_points - ray_origins, dim
 hit_points = perform_ray_mesh_intersection(mesh, ray_origins, ray_directions)
 
 # Print or export intersection points
-print("Total Intersections:", hit_points.shape[0])
+# print("Total Intersections:", hit_points.shape[0])
+print("Surface Points: ", surface_points.shape[0])
 hit_points = np.array(hit_points)
 
 visualize_3d_points(hit_points, extra_points_zyx=cylinder_points_zyx, mesh=mesh)
