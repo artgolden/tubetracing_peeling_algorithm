@@ -8,7 +8,7 @@ from pytorch3d.structures import Meshes
 from trimesh.ray.ray_pyembree import RayMeshIntersector
 
 
-def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_points_idx=None, extra_points_zyx=None, title="Original 3D Points"):
+def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_points_idx=None, extra_points_zyx=None, mesh=None, title="Original 3D Points"):
     """
     Visualize the original 3D surface points inside the 3D volume space.
     """
@@ -40,6 +40,9 @@ def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_po
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
+    if mesh is not None:
+        ax.plot_trisurf(mesh.vertices[:, 2], mesh.vertices[:, 1], mesh.vertices[:, 0], triangles=mesh.faces, color='gray', alpha=0.3)
+
     ax.set_title(title)
     plt.tight_layout()
     plt.show()
@@ -127,4 +130,4 @@ hit_points = perform_ray_mesh_intersection(mesh, ray_origins, ray_directions)
 print("Total Intersections:", hit_points.shape[0])
 hit_points = np.array(hit_points)
 
-visualize_3d_points(point_cloud, extra_points_zyx=cylinder_points_zyx)
+visualize_3d_points(hit_points, extra_points_zyx=cylinder_points_zyx, mesh=mesh)
