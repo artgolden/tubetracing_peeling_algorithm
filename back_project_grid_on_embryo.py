@@ -250,6 +250,54 @@ def interpolate_nan_elements(matrix: np.ndarray) -> np.ndarray:
     return interpolated_matrix
 
 
+def interpolate_nans_horizontally(matrix: np.ndarray, max_interpolation_distance: int = 5) -> np.ndarray:
+    """
+    Interpolates NaN elements in the input matrix along each row using linear interpolation
+    based solely on horizontal neighbors. Only contiguous segments of NaNs that are bounded
+    by valid numbers at both ends and whose gap size is less than or equal to
+    max_interpolation_distance are interpolated.
+    
+    Parameters:
+        matrix (np.ndarray): 2D array of float values which may contain np.nan.
+        max_interpolation_distance (int): Maximum number of consecutive NaN elements in a gap
+                                          that will be interpolated (default is 5).
+    
+    Returns:
+        np.ndarray: A new 2D array (of the same shape as the input) with eligible NaN values
+                    replaced by their linearly interpolated values.
+    """
+    # Create a copy of the matrix so the original is not altered.
+    interpolated = matrix.copy()
+    n_rows, n_cols = interpolated.shape
+
+    for row_idx in range(n_rows):
+        row = interpolated[row_idx]
+        # Determine indices of valid (non-NaN) entries in the row.
+        valid_indices = np.where(~np.isnan(row))[0]
+        
+        # If there are less than two valid points, no interpolation can be performed.
+        if valid_indices.size < 2:
+            continue
+
+        # Process each gap between consecutive valid indices.
+        for i in range(len(valid_indices) - 1):
+            start_idx = valid_indices[i]
+            end_idx = valid_indices[i + 1]
+            gap_size = end_idx - start_idx - 1  # Number of NaNs between the two valid points
+            
+            # Only interpolate if there is a gap and the gap size is within the allowed maximum.
+            if gap_size > 0 and gap_size <= max_interpolation_distance:
+                start_value = row[start_idx]
+                end_value = row[end_idx]
+                # Compute linearly spaced values between the two valid boundaries.
+                # np.linspace returns an array including both endpoints; we discard them.
+                interpolated_values = np.linspace(start_value, end_value, num=gap_size + 2)[1:-1]
+                row[start_idx + 1:end_idx] = interpolated_values
+
+    return interpolated
+
+
+
 def visualize_distance_heatmaps(vertical_avg: np.ndarray, horizontal_avg: np.ndarray,
                                 title_vertical: str = "Vertical Neighbor Avg Distance",
                                 title_horizontal: str = "Horizontal Neighbor Avg Distance",
@@ -346,7 +394,9 @@ shape_2d = (rows, cols)
 
 # Compute the average neighbor distances
 vertical_avg, horizontal_avg = compute_avg_neighbor_distances(hit_points_3d, shape_2d)
+vertical_avg = interpolate_nans_horizontally(vertical_avg)
 vertical_avg = interpolate_nan_elements(vertical_avg)
+horizontal_avg = interpolate_nans_horizontally(horizontal_avg)
 horizontal_avg = interpolate_nan_elements(horizontal_avg)
 
 # Visualize the computed heatmaps for average distances
