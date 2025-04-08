@@ -1,6 +1,5 @@
 """
-A module for distortion map calculation of the mapping of points 
-on embryo surface mesh to the 2D surface of half a cylinder.
+A module to calculate distortion maps of cylindrical cartography projection for a given embryo surface mesh.
 
 This module provides functions to:
   - Generate a mesh from a point cloud.
@@ -287,7 +286,7 @@ def calculate_distortion_map(
         cylinder_radius (float): The cylinder radius for projection.
         approx_spacing_x (int): Approximate spacing along the X-axis.
         approx_spacing_theta (int): Approximate angular spacing.
-        point_cloud (np.ndarray): Array of 3D points representing the embryo surface.
+        point_cloud (np.ndarray): Array of 3D points (N, 3) representing the embryo surface.
         full_size_projection_shape (tuple): Projection image shape as (width, height).
     
     Returns:
