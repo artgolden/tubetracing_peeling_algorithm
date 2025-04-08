@@ -72,31 +72,32 @@ def perform_ray_mesh_intersection(mesh, ray_origins, ray_directions):
 
 def sparse_grid_on_half_cylinder(
     image_shape,
-    spacing_x=7,
-    spacing_theta=7,
+    num_points_theta,
+    num_points_x,
     radius=1.0,
     origin_yz=(0.0, 0.0)
 ):
     height, width = image_shape
     y0, z0 = origin_yz
 
-    num_points_theta = max(1, int(width) // spacing_theta)
-    num_points_x = max(1, int((height) // spacing_x))
+    # Generate angular samples along the half-cylinder
+    theta = np.linspace(-np.pi/2, np.pi/2, num_points_theta)
+    # Generate x samples evenly along the image height.
+    x = np.linspace(0, height, num_points_x)
 
-    theta = np.linspace(-np.pi / 2, np.pi / 2, num_points_theta)
-    x = np.arange(0, num_points_x * spacing_x, spacing_x)
-
-    u_coords = np.round(np.linspace(0, width, num_points_theta))
+    # Create a grid for the UV coordinates.
+    u_coords = np.linspace(0, width, num_points_theta)
     uu, vv = np.meshgrid(u_coords, x)
     uv_grid = np.stack((uu.ravel(), vv.ravel()), axis=-1)
 
+    # Create grid of theta and x values for generating 3D points.
     theta_grid, x_grid = np.meshgrid(theta, x)
-
     z = radius * np.cos(theta_grid) + z0
     y = radius * np.sin(theta_grid) + y0
 
     points_3d = np.column_stack([z.ravel(), y.ravel(), x_grid.ravel()])
     uv_grid_shape = (num_points_theta, num_points_x)
+    
     return points_3d, uv_grid, uv_grid_shape
 
 def visualize_uv_grid(uv_grid, uv_grid_highlighted=None, title="UV Grid Visualization"):
@@ -317,12 +318,18 @@ mesh, point_cloud = load_mesh_from_point_cloud("outs/hull_embryo_surface_points.
 # Generate grid points on half-cylinder surface
 image_shape = (vol_shape[2], round(np.pi * max_r + 1))
 cylinder_radius = max_r
-spacing_x = 2
-spacing_theta = 5
+approx_spacing_x = 2
+approx_spacing_theta = 5
+num_points_theta = image_shape[1] // approx_spacing_theta
+num_points_x = image_shape[0] // approx_spacing_x
+spacing_u = image_shape[1] / num_points_theta
+spacing_v = image_shape[0] / num_points_x
+print(f"Spacing u: {spacing_u}, Spacing v: {spacing_v}")
+
 cylinder_points_zyx, uv_grid, uv_grid_shape = sparse_grid_on_half_cylinder(
     image_shape=image_shape,
-    spacing_x=spacing_x,
-    spacing_theta=spacing_theta,
+    num_points_theta=num_points_theta,
+    num_points_x=num_points_x,
     radius=cylinder_radius,
     origin_yz=(vol_shape[1] // 2, 0)
 )
@@ -363,9 +370,16 @@ vertical_avg = interpolate_nan_elements(vertical_avg)
 horizontal_avg = interpolate_nans_horizontally(horizontal_avg)
 horizontal_avg = interpolate_nan_elements(horizontal_avg)
 
-horizontal_distortion = spacing_theta / horizontal_avg
-vertical_distortion = spacing_x / vertical_avg
+horizontal_distortion = spacing_u / horizontal_avg
+vertical_distortion = spacing_v / vertical_avg
 
+print(f"Vertical distortion matrix shape: {vertical_distortion.shape}")
+print(f"Horizontal distortion matrix shape: {horizontal_distortion.shape}")
+full_size_projection_shape = image_shape
+print(f"Full size cylindrical projection shape: {full_size_projection_shape}")
+
+
+end_time = time.time()
 # Visualize the computed heatmaps for average distances
 visualize_distance_heatmaps(vertical_distortion,
                             horizontal_distortion,
@@ -373,7 +387,6 @@ visualize_distance_heatmaps(vertical_distortion,
                             title_vertical="Vertical distortion factor\n of embryo to cylinder mapping",
                             title_horizontal="Horizontal distortion factor\n of embryo to cylinder mapping")
 
-end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"Done in {elapsed_time:.4f} seconds")
 
