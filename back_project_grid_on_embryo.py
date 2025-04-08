@@ -4,6 +4,7 @@ import trimesh
 import torch
 import matplotlib.pyplot as plt
 import tifffile as tiff
+from scipy.interpolate import griddata
 
 from pytorch3d.structures import Meshes
 from trimesh.ray.ray_pyembree import RayMeshIntersector
@@ -189,6 +190,65 @@ def compute_avg_neighbor_distances(hit_points_3d: np.ndarray, shape_2d: tuple) -
 
     return vertical_avg, horizontal_avg
 
+def interpolate_nan_elements(matrix: np.ndarray) -> np.ndarray:
+    """
+    Interpolates NaN elements in a 2D matrix using linear interpolation when there is
+    sufficient information from surrounding non-NaN elements.
+
+    This function expects a 2D numpy array (for example, the vertical or horizontal average
+    distance matrix produced by compute_avg_neighbor_distances). It identifies valid (non-NaN)
+    elements, and then computes a linear interpolation across the grid. Elements that lie
+    outside the convex hull of the valid points are not interpolated and will remain NaN.
+
+    Parameters:
+        matrix (np.ndarray): A 2D numpy array containing numeric values and NaNs.
+
+    Returns:
+        np.ndarray: A 2D numpy array of the same shape as `matrix` with some or all NaN
+                    elements replaced by linearly interpolated values.
+
+    Raises:
+        TypeError: If the input is not a numpy array.
+        ValueError: If the input is not 2-dimensional or if there are no valid data points
+                    to interpolate from.
+
+    Example:
+        >>> import numpy as np
+        >>> test_matrix = np.array([[1.0, 2.0, 3.0],
+        ...                         [4.0, np.nan, 6.0],
+        ...                         [7.0, 8.0, 9.0]])
+        >>> interpolated = interpolate_nan_elements(test_matrix)
+        >>> print(interpolated)
+        [[1. 2. 3.]
+         [4. 5. 6.]
+         [7. 8. 9.]]
+    """
+    # Validate input
+    if not isinstance(matrix, np.ndarray):
+        raise TypeError("Input must be a numpy ndarray.")
+    if matrix.ndim != 2:
+        raise ValueError("Input matrix must be 2-dimensional.")
+
+    # Create a boolean mask where data is valid (non-NaN)
+    valid_mask = ~np.isnan(matrix)
+    if not np.any(valid_mask):
+        raise ValueError("The input matrix contains no valid data for interpolation.")
+
+    # Create a grid of coordinates corresponding to the matrix indices.
+    # Here, rows correspond to the first dimension and cols to the second.
+    rows, cols = matrix.shape
+    grid_x, grid_y = np.mgrid[0:rows, 0:cols]
+
+    # Gather the coordinates (as (row, col) pairs) and values of the valid points.
+    valid_coords = np.array(np.nonzero(valid_mask)).T   # shape (N, 2) where each row is [row, col]
+    valid_values = matrix[valid_mask]
+
+    # Interpolate over the grid using linear interpolation.
+    # Note: Points outside the convex hull of valid_coords will be left as NaN.
+    interpolated_matrix = griddata(valid_coords, valid_values, (grid_x, grid_y), method='linear')
+
+    return interpolated_matrix
+
 
 def visualize_distance_heatmaps(vertical_avg: np.ndarray, horizontal_avg: np.ndarray,
                                 title_vertical: str = "Vertical Neighbor Avg Distance",
@@ -286,14 +346,16 @@ shape_2d = (rows, cols)
 
 # Compute the average neighbor distances
 vertical_avg, horizontal_avg = compute_avg_neighbor_distances(hit_points_3d, shape_2d)
+vertical_avg = interpolate_nan_elements(vertical_avg)
+horizontal_avg = interpolate_nan_elements(horizontal_avg)
 
 # Visualize the computed heatmaps for average distances
-# visualize_distance_heatmaps(vertical_avg, horizontal_avg, ylim=(20, 120))
+visualize_distance_heatmaps(vertical_avg, horizontal_avg, ylim=(20, 120))
 
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"Done in {elapsed_time:.4f} seconds")
 
 # TODO: 
+# + interpolate the distortion map?
 # - convert distances to distortion factors by 1/(uv_grid sampling rates)
-# - interpolate the distortion map?
