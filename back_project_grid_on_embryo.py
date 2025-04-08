@@ -45,16 +45,15 @@ def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_po
     plt.tight_layout()
     plt.show()
 
-def load_mesh_from_point_cloud(npy_path, vol_shape):
+def mesh_from_point_cloud(points, vol_shape) -> trimesh.Trimesh:
     """
-    Load a point cloud from a .npy file and compute the convex hull mesh.
+    Point cloud to convex hull mesh.
     Returns a Trimesh mesh.
     """
-    points = np.load(npy_path)[:, [2, 1, 0]]
     points[:, [0]] = vol_shape[0] - points[:, [0]] - 1  # Flip z axis
     cloud = trimesh.points.PointCloud(points)
     mesh = cloud.convex_hull
-    return mesh, points
+    return mesh
 
 def perform_ray_mesh_intersection(mesh, ray_origins, ray_directions):
     """
@@ -346,92 +345,99 @@ def visualize_distance_heatmaps(vertical_avg: np.ndarray, horizontal_avg: np.nda
     plt.tight_layout()
     plt.show()
 
-start_time = time.time()
+if __name__ == "__main__":
+    start_time = time.time()
 
-# Get image volume shape
-vol_shape = tiff.imread("outs/down_cropped_tp_300.tif").shape
-print(f"Volume shape: {vol_shape}")
-max_r = round(vol_shape[1] / 2.0 * 1.15)
+    # ===== Inputs =====
 
-# Load mesh from point cloud .npy file
-mesh, point_cloud = load_mesh_from_point_cloud("outs/hull_embryo_surface_points.npy", vol_shape)
+    # Get image volume shape
+    embryo_vol_shape = tiff.imread("outs/down_cropped_tp_300.tif").shape
+    print(f"Volume shape: {embryo_vol_shape}")
+    max_r = round(embryo_vol_shape[1] / 2.0 * 1.15)
+    cylinder_radius = max_r
+    approx_spacing_x = 2
+    approx_spacing_theta = 5
 
-# Generate grid points on half-cylinder surface
-image_shape = (vol_shape[2], round(np.pi * max_r + 1))
-cylinder_radius = max_r
-approx_spacing_x = 2
-approx_spacing_theta = 5
-num_points_theta = image_shape[1] // approx_spacing_theta
-num_points_x = image_shape[0] // approx_spacing_x
-spacing_u = image_shape[1] / num_points_theta
-spacing_v = image_shape[0] / num_points_x
-print(f"Spacing u: {spacing_u}, Spacing v: {spacing_v}")
+    point_cloud = np.load("outs/hull_embryo_surface_points.npy")[:, [2, 1, 0]]
 
-cylinder_points_zyx, uv_grid, uv_grid_shape = sparse_grid_on_half_cylinder(
-    image_shape=image_shape,
-    num_points_theta=num_points_theta,
-    num_points_x=num_points_x,
-    radius=cylinder_radius,
-    origin_yz=(vol_shape[1] // 2, 0)
-)
+    # Generate grid points on half-cylinder surface
+    image_shape = (embryo_vol_shape[2], round(np.pi * max_r + 1))
 
-# Convert ZYX to XYZ for processing using NumPy.
-# Since cylinder_points_zyx is already a NumPy array, just ensure the type is float32.
-surface_points = cylinder_points_zyx.astype(np.float32)
-
-# Ray origins and directions using NumPy.
-ray_origins = surface_points.copy()
-ray_origins[:, 1] = vol_shape[1] // 2  # Set Y to center of volume
-ray_origins[:, 0] = 0                 # Set Z to 0
-
-# Compute ray directions by normalizing the vector differences.
-vecs = surface_points - ray_origins
-norms = np.linalg.norm(vecs, axis=1, keepdims=True)
-ray_directions = vecs / norms
-
-# Perform ray-mesh intersection
-hit_points = perform_ray_mesh_intersection(mesh, ray_origins, ray_directions)
-
-print("Surface Points: ", surface_points.shape[0])
-hit_points_3d = np.array(hit_points)
-
-# Example visualization calls (uncomment to run):
-#visualize_3d_points(hit_points_3d, extra_points_zyx=cylinder_points_zyx[1000:1002], mesh=mesh, volume_shape_zyx=vol_shape)
-# print(f"uv_grid shape: {uv_grid_shape} uv_grid num points: {uv_grid.shape[0]}")
-uv_grid_highlighted = uv_grid[1000:1002]  # example highlighted indices
-#visualize_uv_grid(uv_grid, uv_grid_highlighted)
-
-cols, rows = uv_grid_shape
-shape_2d = (rows, cols)
-
-# Compute the average neighbor distances
-vertical_avg, horizontal_avg = compute_avg_neighbor_distances(hit_points_3d, shape_2d)
-vertical_avg = interpolate_nans_horizontally(vertical_avg)
-vertical_avg = interpolate_nan_elements(vertical_avg)
-horizontal_avg = interpolate_nans_horizontally(horizontal_avg)
-horizontal_avg = interpolate_nan_elements(horizontal_avg)
-
-full_size_projection_shape = image_shape
-print(f"Full size cylindrical projection shape: {full_size_projection_shape}")
-horizontal_distortion = resize_distortion_map(spacing_u / horizontal_avg, full_size_projection_shape)
-vertical_distortion = resize_distortion_map(spacing_v / vertical_avg, full_size_projection_shape)
+    # ===== Main script =====
+    num_points_theta = image_shape[1] // approx_spacing_theta
+    num_points_x = image_shape[0] // approx_spacing_x
+    spacing_u = image_shape[1] / num_points_theta
+    spacing_v = image_shape[0] / num_points_x
+    print(f"Spacing u: {spacing_u}, Spacing v: {spacing_v}")
 
 
+    cylinder_points_zyx, uv_grid, uv_grid_shape = sparse_grid_on_half_cylinder(
+        image_shape=image_shape,
+        num_points_theta=num_points_theta,
+        num_points_x=num_points_x,
+        radius=cylinder_radius,
+        origin_yz=(embryo_vol_shape[1] // 2, 0)
+    )
 
-print(f"Vertical distortion matrix shape: {vertical_distortion.shape}")
-print(f"Horizontal distortion matrix shape: {horizontal_distortion.shape}")
+    mesh = mesh_from_point_cloud(point_cloud, embryo_vol_shape)
+
+    # Convert ZYX to XYZ for processing using NumPy.
+    # Since cylinder_points_zyx is already a NumPy array, just ensure the type is float32.
+    surface_points = cylinder_points_zyx.astype(np.float32)
+
+    # Ray origins and directions using NumPy.
+    ray_origins = surface_points.copy()
+    ray_origins[:, 1] = embryo_vol_shape[1] // 2  # Set Y to center of volume
+    ray_origins[:, 0] = 0                 # Set Z to 0
+
+    # Compute ray directions by normalizing the vector differences.
+    vecs = surface_points - ray_origins
+    norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+    ray_directions = vecs / norms
+
+    # Perform ray-mesh intersection
+    hit_points = perform_ray_mesh_intersection(mesh, ray_origins, ray_directions)
+
+    print("Surface Points: ", surface_points.shape[0])
+    hit_points_3d = np.array(hit_points)
+
+    # Example visualization calls (uncomment to run):
+    #visualize_3d_points(hit_points_3d, extra_points_zyx=cylinder_points_zyx[1000:1002], mesh=mesh, volume_shape_zyx=vol_shape)
+    # print(f"uv_grid shape: {uv_grid_shape} uv_grid num points: {uv_grid.shape[0]}")
+    uv_grid_highlighted = uv_grid[1000:1002]  # example highlighted indices
+    #visualize_uv_grid(uv_grid, uv_grid_highlighted)
+
+    cols, rows = uv_grid_shape
+    shape_2d = (rows, cols)
+
+    # Compute the average neighbor distances
+    vertical_avg, horizontal_avg = compute_avg_neighbor_distances(hit_points_3d, shape_2d)
+    vertical_avg = interpolate_nans_horizontally(vertical_avg)
+    vertical_avg = interpolate_nan_elements(vertical_avg)
+    horizontal_avg = interpolate_nans_horizontally(horizontal_avg)
+    horizontal_avg = interpolate_nan_elements(horizontal_avg)
+
+    full_size_projection_shape = image_shape
+    print(f"Full size cylindrical projection shape: {full_size_projection_shape}")
+    horizontal_distortion = resize_distortion_map(spacing_u / horizontal_avg, full_size_projection_shape)
+    vertical_distortion = resize_distortion_map(spacing_v / vertical_avg, full_size_projection_shape)
 
 
-end_time = time.time()
-# Visualize the computed heatmaps for average distances
-visualize_distance_heatmaps(vertical_distortion,
-                            horizontal_distortion,
-                            # ylim=(45*2, 300*2),
-                            title_vertical="Vertical distortion factor\n of embryo to cylinder mapping",
-                            title_horizontal="Horizontal distortion factor\n of embryo to cylinder mapping")
 
-elapsed_time = end_time - start_time
-print(f"Done in {elapsed_time:.4f} seconds")
+    print(f"Vertical distortion matrix shape: {vertical_distortion.shape}")
+    print(f"Horizontal distortion matrix shape: {horizontal_distortion.shape}")
+
+
+    end_time = time.time()
+    # Visualize the computed heatmaps for average distances
+    visualize_distance_heatmaps(vertical_distortion,
+                                horizontal_distortion,
+                                # ylim=(45*2, 300*2),
+                                title_vertical="Vertical distortion factor\n of embryo to cylinder mapping",
+                                title_horizontal="Horizontal distortion factor\n of embryo to cylinder mapping")
+
+    elapsed_time = end_time - start_time
+    print(f"Done in {elapsed_time:.4f} seconds")
 
 # TODO:
 # + interpolate the distortion map?
