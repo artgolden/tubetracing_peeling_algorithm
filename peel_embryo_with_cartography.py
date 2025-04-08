@@ -23,7 +23,7 @@ from dexp.utils.backends import Backend, BestBackend, CupyBackend, NumpyBackend
 import importlib
 from scipy import ndimage as cpu_ndimage
 from numba import njit
-from typing import Optional
+from typing import Optional, Tuple
 from joblib import Parallel, delayed
 import torch
 import torch.nn.functional as F
@@ -563,7 +563,7 @@ def add_projected_embryo_outline_points(volume_shape_zyx, points) -> np.ndarray:
     more_points = np.concatenate((points, p_proj))
     return more_points
 
-def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=3) -> Volume:
+def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=3) -> Tuple[Volume, np.ndarray]:
     """
     Converts a set of 3D points to a binary volume mask of the inner part of the embryo using a convex hull.
 
@@ -579,6 +579,7 @@ def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=
     Returns:
         vedo.Volume: A vedo.Volume object representing the binary volume mask.  The mask has values of 255 inside
             the convex hull and 0 outside.
+        numpy.ndarray: A numpy array convexhull vertices.
     """
     points_raw = points[:, [2, 1, 0]]
     pts = Points(points_raw)
@@ -595,7 +596,7 @@ def points_to_convex_hull_volume_mask(points, volume_shape_zyx, dilation_radius=
         erosion_radius = abs(dilation_radius)
         logging.debug(f"Eroding with erosion radius of {erosion_radius}")
         modified = vol_mask.clone().erode(neighbours=(erosion_radius,erosion_radius,erosion_radius))
-    return modified
+    return modified, hull.vertices
 
 def substract_mask_from_embryo_volume(volume_zyx: np.ndarray, mask_xyz) -> np.ndarray:
     """
@@ -941,6 +942,8 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                  surface_detection_mode: str = "wbns",
                                  thresholding_after_wbns: str = None,
                                  do_cylindrical_cartography=True,
+                                 do_distortion_maps=True,
+                                 save_distortion_map_vis=True,
                                  prune_voxels_after_wbns=True,
                                  remove_outliers_after_wbns=True,
                                  do_save_points=True, 
@@ -1029,7 +1032,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
 
         # Create a volume mask from the points
         logging.info("Peeling: Converting points to mask")
-        mask = points_to_convex_hull_volume_mask(points, downsampled_zyx.shape, dilation_radius=volume_mask_dilation_radius)
+        mask, hull_points_downsampled = points_to_convex_hull_volume_mask(points, downsampled_zyx.shape, dilation_radius=volume_mask_dilation_radius)
 
         logging.debug(f"Mask shape: {mask.shape}, converting mask to numpy and transposing.")
         mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
@@ -1044,7 +1047,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
     else: 
         logging.info("Peeling: Using provided mask")
         print("Peeling: Using provided mask")
-        mask_upscaled = peeling_mask
+        mask_upscaled = peeling_mask #TODO Neeed to save hull points acros the timeseries as well
 
     # Subtract the mask from the embryo volume
     logging.info("Peeling: Substracting mask from embryo volume")
@@ -1075,6 +1078,40 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         os.makedirs(cartography_dir, exist_ok=True)
         cartography_file = os.path.join(cartography_dir, f"tp_{timepoint}_cyl_proj.tif")
         tiff.imwrite(cartography_file, projection_cpu)
+    
+    if do_distortion_maps and do_cylindrical_cartography and isinstance(peeling_mask, np.ndarray):
+        logging.info("Starting distortion maps calculaiton for cylindrical cartography")
+        import distortion_map
+        # Compute the distortion maps for cylindrical cartography
+        max_r = round(downsampled_zyx.shape[1] / 2.0 * 1.15)
+        full_size_projection_shape = (downsampled_zyx.shape[2], round(np.pi * max_r + 1))
+
+        vertical_map, horizontal_map = distortion_map.calculate_distortion_map(
+            embryo_vol_shape=downsampled_zyx.shape,
+            cylinder_radius=max_r,
+            approx_spacing_x=2,
+            approx_spacing_theta=5,
+            point_cloud=hull_points_downsampled[:, [2, 1, 0]],
+            full_size_projection_shape=full_size_projection_shape
+        )
+        distortion_maps_dir = os.path.join(output_dir, "distortion_maps")
+        os.makedirs(distortion_maps_dir, exist_ok=True)
+        verti_dist_map_f = os.path.join(distortion_maps_dir, f"tp_{timepoint}_vertical_distortion_map.npy")
+        horiz_dist_map_f = os.path.join(distortion_maps_dir, f"tp_{timepoint}_horizontal_distortion_map.npy")
+        np.save(verti_dist_map_f, vertical_map)
+        np.save(horiz_dist_map_f, horizontal_map)
+        if save_distortion_map_vis:
+            logging.info("Saving distortion map heatmaps")
+            import distortion_map_vis
+            heatmap = distortion_map_vis.get_distortion_heatmaps(
+                vertical_dist=vertical_map,
+                horizontal_dist=horizontal_map,
+            )
+            heatmap_dir = os.path.join(distortion_maps_dir, "heatmaps")
+            os.makedirs(heatmap_dir, exist_ok=True)
+            heatmap.save(os.path.join(heatmap_dir, f"tp_{timepoint}_distortion_heatmaps.png"))
+
+    
     return True, mask_upscaled
 
 

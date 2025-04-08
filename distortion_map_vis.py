@@ -170,21 +170,21 @@ def visualize_distance_heatmaps(
     plt.tight_layout()
     plt.show()
 
-def get_distance_heatmaps(
-    vertical_avg: np.ndarray,
-    horizontal_avg: np.ndarray,
-    title_vertical: str = "Vertical Neighbor Avg Distance",
-    title_horizontal: str = "Horizontal Neighbor Avg Distance",
+def get_distortion_heatmaps(
+    vertical_dist: np.ndarray,
+    horizontal_dist: np.ndarray,
+    title_vertical: str = "Vertical distortion factors",
+    title_horizontal: str = "Horizontal distortion factors",
     xlim: tuple = None,
     ylim: tuple = None
 ) -> Image.Image:
     """
-    Generate heatmaps for vertical and horizontal distance matrices using color scales that
+    Generate heatmaps for vertical and horizontal distortion matrices using color scales that
     exclude the extreme top and bottom 2% of values (used only for color scaling), and handle NaNs.
 
     Parameters:
-        vertical_avg (np.ndarray): 2D array representing vertical average distances.
-        horizontal_avg (np.ndarray): 2D array representing horizontal average distances.
+        vertical_avg (np.ndarray): 2D array representing vertical distortion factors.
+        horizontal_avg (np.ndarray): 2D array representing horizontal distortion factors.
         title_vertical (str): Title for the vertical heatmap.
         title_horizontal (str): Title for the horizontal heatmap.
         xlim (tuple, optional): Limits for cropping along the x-axis.
@@ -194,8 +194,8 @@ def get_distance_heatmaps(
         Image.Image: PIL Image of the composed heatmaps.
     """
     fig, axs = plt.subplots(1, 2, figsize=(12, 5))
-    v_data = vertical_avg.copy()
-    h_data = horizontal_avg.copy()
+    v_data = vertical_dist.copy()
+    h_data = horizontal_dist.copy()
 
     # Apply axis limits if provided
     if ylim:
