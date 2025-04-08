@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import trimesh
 import torch
@@ -235,6 +236,7 @@ def visualize_distance_heatmaps(vertical_avg: np.ndarray, horizontal_avg: np.nda
     plt.tight_layout()
     plt.show()
 
+start_time = time.time()
 
 # Get image volume shape
 vol_shape = tiff.imread("outs/down_cropped_tp_300.tif").shape
@@ -243,7 +245,6 @@ max_r = round(vol_shape[1] / 2.0 * 1.15)
 
 # Load mesh from point cloud .npy file
 mesh, point_cloud = load_mesh_from_point_cloud("outs/hull_embryo_surface_points.npy", vol_shape)
-
 
 # Generate grid points on half-cylinder surface
 image_shape = (vol_shape[2], round(np.pi * max_r + 1))
@@ -274,11 +275,11 @@ print("Surface Points: ", surface_points.shape[0])
 hit_points_3d = np.array(hit_points)
 
 
-visualize_3d_points(hit_points_3d, extra_points_zyx=cylinder_points_zyx[1000:1002], mesh=mesh, volume_shape_zyx=vol_shape)
+# visualize_3d_points(hit_points_3d, extra_points_zyx=cylinder_points_zyx[1000:1002], mesh=mesh, volume_shape_zyx=vol_shape)
 
 print(f"uv_grid shape: {uv_grid_shape} uv_grid num points: {uv_grid.shape[0]}")
 uv_grid_highlighted = uv_grid[1000:1002]  # example highlighted indices
-
+# visualize_uv_grid(uv_grid, uv_grid_highlighted)
 
 cols, rows = uv_grid_shape
 shape_2d = (rows, cols)
@@ -287,7 +288,11 @@ shape_2d = (rows, cols)
 vertical_avg, horizontal_avg = compute_avg_neighbor_distances(hit_points_3d, shape_2d)
 
 # Visualize the computed heatmaps for average distances
-visualize_distance_heatmaps(vertical_avg, horizontal_avg, ylim=(20, 120))
+# visualize_distance_heatmaps(vertical_avg, horizontal_avg, ylim=(20, 120))
+
+end_time = time.time()
+elapsed_time = end_time - start_time
+print(f"Done in {elapsed_time:.4f} seconds")
 
 # TODO: 
 # - convert distances to distortion factors by 1/(uv_grid sampling rates)
