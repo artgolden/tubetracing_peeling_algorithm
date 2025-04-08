@@ -65,7 +65,7 @@ def estimate_local_distortion_gpu(vertices, uv_coords, neighbors):
     # Use pseudo-inverse fallback for safe solution even when ATA is nearly singular
     ATA_inv = torch.linalg.pinv(ATA)  # [N, 3, 3]
     J_all = ATA_inv.bmm(ATB).transpose(1, 2)  # [N, 2, 3]
-    J[rank_mask] = J_all[rank_mask]
+    # J[rank_mask] = J_all[rank_mask]
 
     # Compute stretch per UV axis: norm of Jacobian row vectors
     stretch_u = torch.linalg.norm(J[:, 0, :], dim=1)  # [N]
@@ -73,7 +73,7 @@ def estimate_local_distortion_gpu(vertices, uv_coords, neighbors):
     dist = torch.stack([stretch_u, stretch_v], dim=1)  # [N, 2]
 
     # Mask out low-confidence results (non-full-rank entries)
-    dist[~rank_mask.cpu()] = float('nan')
+    # dist[~rank_mask.cpu()] = float('nan')
 
     return dist.cpu().numpy()
 
@@ -476,7 +476,7 @@ if __name__ == "__main__":
         # Step 4: Get dense vertices (passed further down)
         dense_vertices = mesh.vertices
         points = dense_vertices
-    print("Generated dense hull mesh: ", len(points), "vertices")
+    # print("Generated dense hull mesh: ", len(points), "vertices")
     
     
     vol_shape = tiff.imread("outs/down_cropped_tp_300.tif").shape
@@ -484,19 +484,18 @@ if __name__ == "__main__":
     print(f"Points z: {min(points[:, 0])} to {max(points[:, 0])}, y: {min(points[:, 1])} to {max(points[:, 1])}, x: {min(points[:, 2])} to {max(points[:, 2])}")
     points = points[points[:, 0] > min(points[:, 0])+2]
     print(f"Volume shape: {vol_shape}")
-    # points = random_points_on_sphere_normal(n_points=6000)
-    # points = generate_meridian_points_vectorized()
-    # half_sphere_points = points[points[:, 0] >= 0]
+
     max_r = round(vol_shape[1] / 2.0 * 1.15)
-    uv_coords, points_on_cyl = project_to_cylinder(points, radius=max_r, origin_yz=(vol_shape[1]//2, 0))
+    # uv_coords, points_on_cyl = project_to_cylinder(points, radius=max_r, origin_yz=(vol_shape[1]//2, 0))
 
 
-    neighbors = gpu_knn_search(points, k=30)
-    distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
-    visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
+    # neighbors = gpu_knn_search(points, k=4)
+    # distortions = estimate_local_distortion_gpu(points, uv_coords, neighbors)
+    # visualize_distortion_scatter(uv_coords, distortions, distortion_mag_factor=5)
 
-    interpolate_and_show_heatmap(uv_coords, distortions[:,[0]])
+    # interpolate_and_show_heatmap(uv_coords, distortions[:,[0]])
     # visualize_uv_projection(uv_coords, heatmap=True)
     # visualize_3d_points(points, highlighted_points_idx=neighbors[1])
     # visualize_3d_points(points, extra_points_zyx=points_on_cyl)
-    visualize_3d_points(points, extra_points_zyx=points_on_cyl)
+    grid, _ = sparse_grid_on_half_cylinder((vol_shape[2], round(np.pi * max_r + 1)), radius=max_r, origin_yz=(vol_shape[1]//2, 0), spacing_theta=4, spacing_x=4)
+    visualize_3d_points(points, extra_points_zyx=grid)

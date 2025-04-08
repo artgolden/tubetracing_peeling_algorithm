@@ -21,9 +21,10 @@ Input data: half of the embryo imaged with 2 merged illuminations, assuming that
   convert mesh coords back to orignal raw image (later)
 + Do simple cylindrical max projection from 3D peeled volume
 
+
 Ongoing problems and questions:
 x A lot of erroneours detections inside the embryo. But convex hull gives prety good estimate nonetheless.
-- Try 3d median filter for better detection?
++ Try 3d median filter for better detection? does not work
 x Or some other form of 3d denoising?
 x there are lots of detections around the origin of the polar coords, why is that? = Looks like it was because of the rays pointing away from the image volume, limiting Phi to 0:Pi/2 solved it.
 + Add cylindrical_cartography_projection to main script
@@ -50,7 +51,10 @@ Current TODO:
 + !!! Change thresholding for structure detection with wbns to "mean", save images from wbns for debugging to disk, add failsafe for the number of points detected, add more info to logging about image parameters and number of points detected
 + Add argument to skip a series containing pattern in the TIF file name
 - !! cartography projection can sometimes introduce stretching of the projection in vertical direction for one timepoint. Need to fix.
+  - Embryo is drifting up and down in the z direction, and this corresponds to projection being slightly stretched and squeezed. Need to do some drift correction maybe on YZ slices to correct this drift. 
 + Need to implement dirt detection filtering by checking each point and radius 4 around it, if removing all points in this radius makes the convex hull significantly smaller/change shape, then remove the point. Or if all other close points are much closer to embryo center that that point. Convex hull is sequential and expensive algorithm, so it would not work to recalculate it many many times.
+- On top of the embryo surface, since 2 illumination stiching is done using averaging, there ends up blurry halo, especially on tangential slices that gets recognised by WBNS surface detection and leads to errors in the mask. Possible fix is do the illumination stitching using linear blending instead of averaging.
+- Change the crop rotated rectangle 3d code to ndimage affine_transform with default option of interpolation order=4 to minimize artifacts. Expoose interpolation order as cli argument.
 
 
 
@@ -60,3 +64,4 @@ For later:
 - Write a Napari plugin that allows to manually correct the substraction mask by clicking on the cartography projection, and thus adding or sustracting from the surface of the substraction mask volume at a correspoinding location. It will probably be convenient to have substraction mask be in cylindrical coordinates same as the cartography projection.
 - Check whether transposes from ZYX to XYZ are necessary for the vedo library.
 - When cropping right to the embryo, just assuming embryo is a circle when doing cylindrical projection is not good enough. Need better estimation of the embryo size and r_max.
+- Find out whether running get_isotropic_volume on GPU introduces some voxel errors from GPU specific interpolation and floating point conversions.
