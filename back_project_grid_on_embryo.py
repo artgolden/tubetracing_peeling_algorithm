@@ -191,7 +191,9 @@ def compute_avg_neighbor_distances(hit_points_3d: np.ndarray, shape_2d: tuple) -
 
 def visualize_distance_heatmaps(vertical_avg: np.ndarray, horizontal_avg: np.ndarray,
                                 title_vertical: str = "Vertical Neighbor Avg Distance",
-                                title_horizontal: str = "Horizontal Neighbor Avg Distance"):
+                                title_horizontal: str = "Horizontal Neighbor Avg Distance",
+                                xlim: tuple = None,
+                                ylim: tuple = None):
     """
     Visualize the two 2D matrices (vertical and horizontal average distances) as heatmaps.
 
@@ -200,17 +202,36 @@ def visualize_distance_heatmaps(vertical_avg: np.ndarray, horizontal_avg: np.nda
         horizontal_avg (np.ndarray): 2D array with horizontal average distances.
         title_vertical (str): Title for the vertical heatmap.
         title_horizontal (str): Title for the horizontal heatmap.
+        xlim (tuple): Optional (min, max) range for the x-axis (columns).
+        ylim (tuple): Optional (min, max) range for the y-axis (rows).
     """
     fig, axs = plt.subplots(1, 2, figsize=(12, 5))
-    
-    im_v = axs[0].imshow(vertical_avg, interpolation='nearest', aspect='auto')
+
+    # Extract subarrays if limits are provided
+    v_data = vertical_avg.copy()
+    h_data = horizontal_avg.copy()
+
+    if ylim:
+        v_data = v_data[ylim[0]:ylim[1], :]
+        h_data = h_data[ylim[0]:ylim[1], :]
+    if xlim:
+        v_data = v_data[:, xlim[0]:xlim[1]]
+        h_data = h_data[:, xlim[0]:xlim[1]]
+
+    # Plot vertical heatmap
+    im_v = axs[0].imshow(v_data, interpolation='nearest', aspect='auto', origin='lower')
     axs[0].set_title(title_vertical)
+    axs[0].set_xlabel("U (embryo width)")
+    axs[0].set_ylabel("V (embryo length)")
     fig.colorbar(im_v, ax=axs[0])
-    
-    im_h = axs[1].imshow(horizontal_avg, interpolation='nearest', aspect='auto')
+
+    # Plot horizontal heatmap
+    im_h = axs[1].imshow(h_data, interpolation='nearest', aspect='auto', origin='lower')
     axs[1].set_title(title_horizontal)
+    axs[1].set_xlabel("U (embryo width)")
+    axs[1].set_ylabel("V (embryo length)")
     fig.colorbar(im_h, ax=axs[1])
-    
+
     plt.tight_layout()
     plt.show()
 
@@ -227,8 +248,8 @@ mesh, point_cloud = load_mesh_from_point_cloud("outs/hull_embryo_surface_points.
 # Generate grid points on half-cylinder surface
 image_shape = (vol_shape[2], round(np.pi * max_r + 1))
 cylinder_radius = max_r
-spacing_x = 10
-spacing_theta = 10
+spacing_x = 5
+spacing_theta = 5
 cylinder_points_zyx, uv_grid, uv_grid_shape = sparse_grid_on_half_cylinder(
     image_shape=image_shape,
     spacing_x=spacing_x,
@@ -249,39 +270,25 @@ ray_directions = torch.nn.functional.normalize(surface_points - ray_origins, dim
 # Perform ray-mesh intersection
 hit_points = perform_ray_mesh_intersection(mesh, ray_origins, ray_directions)
 
-# Print or export intersection points
-# print("Total Intersections:", hit_points.shape[0])
 print("Surface Points: ", surface_points.shape[0])
 hit_points_3d = np.array(hit_points)
 
 
-visualize_3d_points(hit_points_3d[1000:1002], extra_points_zyx=cylinder_points_zyx[1000:1002], mesh=mesh, volume_shape_zyx=vol_shape) # #FFFFFFFFFFFFFF flip vol_shape coord order or something??
+visualize_3d_points(hit_points_3d, extra_points_zyx=cylinder_points_zyx[1000:1002], mesh=mesh, volume_shape_zyx=vol_shape)
 
 print(f"uv_grid shape: {uv_grid_shape} uv_grid num points: {uv_grid.shape[0]}")
 uv_grid_highlighted = uv_grid[1000:1002]  # example highlighted indices
-visualize_uv_grid(uv_grid, uv_grid_highlighted)
 
-# ---- New Code for Neighbor Distance Computations and Visualization ---- #
 
-# Example: Arrange hit_points_3d into a 2D matrix with dimensions matching the uv_grid shape.
-# It is assumed that the number of hit points is equal to rows * cols (uv_grid shape)
 cols, rows = uv_grid_shape
-# Alternatively, set shape_2d explicitly if known; for example:
-# shape_2d = (num_rows, num_cols)
-# Here we assume the original grid dimensions are known (for example, from the sparse grid generation).
-# As a simple example, let's use the dimensions from the uv_grid if it was constructed as a mesh grid:
-# For the sparse grid generated above, uv_grid is of shape (num_points, 2); you may need to determine the actual rows and cols.
-# For demonstration purposes, assume rows = number of x positions and cols = number of theta positions.
-# Since x positions were generated using:
-#    x = np.arange(0, num_points_x * spacing_x, spacing_x)
-# and theta positions using:
-#    theta = np.linspace(-np.pi/2, np.pi/2, num_points_theta)
-# Their meshgrid produces a uv_grid of shape (num_points_x, num_points_theta).
-# We can extract these dimensions from the sparse grid generation:
 shape_2d = (rows, cols)
 
 # Compute the average neighbor distances
 vertical_avg, horizontal_avg = compute_avg_neighbor_distances(hit_points_3d, shape_2d)
 
 # Visualize the computed heatmaps for average distances
-visualize_distance_heatmaps(vertical_avg, horizontal_avg)
+visualize_distance_heatmaps(vertical_avg, horizontal_avg, ylim=(20, 120))
+
+# TODO: 
+# - convert distances to distortion factors by 1/(uv_grid sampling rates)
+# - interpolate the distortion map?
