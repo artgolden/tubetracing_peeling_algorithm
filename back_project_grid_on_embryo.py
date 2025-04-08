@@ -1,12 +1,10 @@
 import time
 import numpy as np
 import trimesh
-import torch
 import matplotlib.pyplot as plt
 import tifffile as tiff
 from scipy.interpolate import griddata
 
-from pytorch3d.structures import Meshes
 from trimesh.ray.ray_pyembree import RayMeshIntersector
 
 
@@ -24,13 +22,12 @@ def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_po
     ax.scatter(x, y, z, c='purple', s=3, alpha=0.5)
     if highlighted_points_idx is not None:
         ax.scatter(x[highlighted_points_idx], 
-                y[highlighted_points_idx], 
-                z[highlighted_points_idx], 
-                c='red', s=10, alpha=0.9)
+                   y[highlighted_points_idx], 
+                   z[highlighted_points_idx], 
+                   c='red', s=10, alpha=0.9)
     if extra_points_zyx is not None:
         ax.scatter(extra_points_zyx[:, 2], extra_points_zyx[:, 1], extra_points_zyx[:, 0], c='green', s=3, alpha=0.7)
-    
-
+        
     if volume_shape_zyx is not None:
         ax.set_xlim([0, volume_shape_zyx[2] - 1])
         ax.set_ylim([0, volume_shape_zyx[1] - 1])
@@ -54,11 +51,10 @@ def load_mesh_from_point_cloud(npy_path, vol_shape):
     Returns a Trimesh mesh.
     """
     points = np.load(npy_path)[:, [2, 1, 0]]
-    points[:,[0]] = vol_shape[0] - points[:,[0]] -1 # Flip z axis
+    points[:, [0]] = vol_shape[0] - points[:, [0]] - 1  # Flip z axis
     cloud = trimesh.points.PointCloud(points)
     mesh = cloud.convex_hull
     return mesh, points
-
 
 def perform_ray_mesh_intersection(mesh, ray_origins, ray_directions):
     """
@@ -67,13 +63,12 @@ def perform_ray_mesh_intersection(mesh, ray_origins, ray_directions):
     """
     intersector = RayMeshIntersector(mesh)
     locations, index_ray, index_tri = intersector.intersects_location(
-        ray_origins.cpu().numpy(), ray_directions.cpu().numpy(), multiple_hits=False
+        ray_origins, ray_directions, multiple_hits=False
     )
 
     result = np.full((ray_origins.shape[0], 3), np.nan, dtype=np.float32)
     result[index_ray] = locations
     return result
-
 
 def sparse_grid_on_half_cylinder(
     image_shape,
@@ -95,7 +90,6 @@ def sparse_grid_on_half_cylinder(
     uu, vv = np.meshgrid(u_coords, x)
     uv_grid = np.stack((uu.ravel(), vv.ravel()), axis=-1)
 
-
     theta_grid, x_grid = np.meshgrid(theta, x)
 
     z = radius * np.cos(theta_grid) + z0
@@ -110,7 +104,7 @@ def visualize_uv_grid(uv_grid, uv_grid_highlighted=None, title="UV Grid Visualiz
     Plot the UV grid with optional highlighted points.
     """
     plt.figure(figsize=(6, 6))
-    plt.scatter(uv_grid[:, 0], uv_grid[:,   1], c='blue', s=5, label='UV Grid')
+    plt.scatter(uv_grid[:, 0], uv_grid[:, 1], c='blue', s=5, label='UV Grid')
     if uv_grid_highlighted is not None:
         plt.scatter(uv_grid_highlighted[:, 0], uv_grid_highlighted[:, 1], c='red', s=20, label='Highlighted')
     plt.xlabel('U')
@@ -154,22 +148,18 @@ def compute_avg_neighbor_distances(hit_points_3d: np.ndarray, shape_2d: tuple) -
 
     # Compute vertical average distances for internal rows (exclude first and last row)
     if rows > 2:
-        # Slicing for central elements and their neighbors
         center_vertical = grid[1:-1, :, :]
         top_neighbors = grid[0:-2, :, :]
         bottom_neighbors = grid[2:, :, :]
 
-        # Create valid masks: ensure that none of the points have any NaNs
         valid_mask_vertical = (~np.isnan(center_vertical).any(axis=2) &
-                                ~np.isnan(top_neighbors).any(axis=2) &
-                                ~np.isnan(bottom_neighbors).any(axis=2))
+                                 ~np.isnan(top_neighbors).any(axis=2) &
+                                 ~np.isnan(bottom_neighbors).any(axis=2))
 
-        # Compute Euclidean distances
         diff_top = np.linalg.norm(center_vertical - top_neighbors, axis=2)
         diff_bottom = np.linalg.norm(center_vertical - bottom_neighbors, axis=2)
         avg_vert = 0.5 * (diff_top + diff_bottom)
 
-        # Assign computed averages only where all involved points are valid
         vertical_avg[1:-1, :] = np.where(valid_mask_vertical, avg_vert, np.nan)
 
     # Compute horizontal average distances for internal columns (exclude first and last column)
@@ -179,8 +169,8 @@ def compute_avg_neighbor_distances(hit_points_3d: np.ndarray, shape_2d: tuple) -
         right_neighbors = grid[:, 2:, :]
 
         valid_mask_horizontal = (~np.isnan(center_horizontal).any(axis=2) &
-                                  ~np.isnan(left_neighbors).any(axis=2) &
-                                  ~np.isnan(right_neighbors).any(axis=2))
+                                   ~np.isnan(left_neighbors).any(axis=2) &
+                                   ~np.isnan(right_neighbors).any(axis=2))
 
         diff_left = np.linalg.norm(center_horizontal - left_neighbors, axis=2)
         diff_right = np.linalg.norm(center_horizontal - right_neighbors, axis=2)
@@ -223,32 +213,23 @@ def interpolate_nan_elements(matrix: np.ndarray) -> np.ndarray:
          [4. 5. 6.]
          [7. 8. 9.]]
     """
-    # Validate input
     if not isinstance(matrix, np.ndarray):
         raise TypeError("Input must be a numpy ndarray.")
     if matrix.ndim != 2:
         raise ValueError("Input matrix must be 2-dimensional.")
 
-    # Create a boolean mask where data is valid (non-NaN)
     valid_mask = ~np.isnan(matrix)
     if not np.any(valid_mask):
         raise ValueError("The input matrix contains no valid data for interpolation.")
 
-    # Create a grid of coordinates corresponding to the matrix indices.
-    # Here, rows correspond to the first dimension and cols to the second.
     rows, cols = matrix.shape
     grid_x, grid_y = np.mgrid[0:rows, 0:cols]
-
-    # Gather the coordinates (as (row, col) pairs) and values of the valid points.
-    valid_coords = np.array(np.nonzero(valid_mask)).T   # shape (N, 2) where each row is [row, col]
+    valid_coords = np.array(np.nonzero(valid_mask)).T
     valid_values = matrix[valid_mask]
 
-    # Interpolate over the grid using linear interpolation.
-    # Note: Points outside the convex hull of valid_coords will be left as NaN.
     interpolated_matrix = griddata(valid_coords, valid_values, (grid_x, grid_y), method='linear')
 
     return interpolated_matrix
-
 
 def interpolate_nans_horizontally(matrix: np.ndarray, max_interpolation_distance: int = 5) -> np.ndarray:
     """
@@ -266,16 +247,12 @@ def interpolate_nans_horizontally(matrix: np.ndarray, max_interpolation_distance
         np.ndarray: A new 2D array (of the same shape as the input) with eligible NaN values
                     replaced by their linearly interpolated values.
     """
-    # Create a copy of the matrix so the original is not altered.
     interpolated = matrix.copy()
     n_rows, n_cols = interpolated.shape
 
     for row_idx in range(n_rows):
         row = interpolated[row_idx]
-        # Determine indices of valid (non-NaN) entries in the row.
         valid_indices = np.where(~np.isnan(row))[0]
-        
-        # If there are less than two valid points, no interpolation can be performed.
         if valid_indices.size < 2:
             continue
 
@@ -283,20 +260,14 @@ def interpolate_nans_horizontally(matrix: np.ndarray, max_interpolation_distance
         for i in range(len(valid_indices) - 1):
             start_idx = valid_indices[i]
             end_idx = valid_indices[i + 1]
-            gap_size = end_idx - start_idx - 1  # Number of NaNs between the two valid points
-            
-            # Only interpolate if there is a gap and the gap size is within the allowed maximum.
+            gap_size = end_idx - start_idx - 1
             if gap_size > 0 and gap_size <= max_interpolation_distance:
                 start_value = row[start_idx]
                 end_value = row[end_idx]
-                # Compute linearly spaced values between the two valid boundaries.
-                # np.linspace returns an array including both endpoints; we discard them.
                 interpolated_values = np.linspace(start_value, end_value, num=gap_size + 2)[1:-1]
                 row[start_idx + 1:end_idx] = interpolated_values
 
     return interpolated
-
-
 
 def visualize_distance_heatmaps(vertical_avg: np.ndarray, horizontal_avg: np.ndarray,
                                 title_vertical: str = "Vertical Neighbor Avg Distance",
@@ -305,18 +276,9 @@ def visualize_distance_heatmaps(vertical_avg: np.ndarray, horizontal_avg: np.nda
                                 ylim: tuple = None):
     """
     Visualize the two 2D matrices (vertical and horizontal average distances) as heatmaps.
-
-    Parameters:
-        vertical_avg (np.ndarray): 2D array with vertical average distances.
-        horizontal_avg (np.ndarray): 2D array with horizontal average distances.
-        title_vertical (str): Title for the vertical heatmap.
-        title_horizontal (str): Title for the horizontal heatmap.
-        xlim (tuple): Optional (min, max) range for the x-axis (columns).
-        ylim (tuple): Optional (min, max) range for the y-axis (rows).
     """
     fig, axs = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Extract subarrays if limits are provided
     v_data = vertical_avg.copy()
     h_data = horizontal_avg.copy()
 
@@ -327,14 +289,12 @@ def visualize_distance_heatmaps(vertical_avg: np.ndarray, horizontal_avg: np.nda
         v_data = v_data[:, xlim[0]:xlim[1]]
         h_data = h_data[:, xlim[0]:xlim[1]]
 
-    # Plot vertical heatmap
     im_v = axs[0].imshow(v_data, interpolation='nearest', aspect='auto', origin='lower')
     axs[0].set_title(title_vertical)
     axs[0].set_xlabel("U (embryo width)")
     axs[0].set_ylabel("V (embryo length)")
     fig.colorbar(im_v, ax=axs[0])
 
-    # Plot horizontal heatmap
     im_h = axs[1].imshow(h_data, interpolation='nearest', aspect='auto', origin='lower')
     axs[1].set_title(title_horizontal)
     axs[1].set_xlabel("U (embryo width)")
@@ -364,17 +324,22 @@ cylinder_points_zyx, uv_grid, uv_grid_shape = sparse_grid_on_half_cylinder(
     spacing_x=spacing_x,
     spacing_theta=spacing_theta,
     radius=cylinder_radius,
-    origin_yz = (vol_shape[1]//2, 0)
+    origin_yz=(vol_shape[1] // 2, 0)
 )
 
-# Convert ZYX to XYZ for processing
-surface_points = torch.tensor(cylinder_points_zyx, dtype=torch.float32)
+# Convert ZYX to XYZ for processing using NumPy.
+# Since cylinder_points_zyx is already a NumPy array, just ensure the type is float32.
+surface_points = cylinder_points_zyx.astype(np.float32)
 
-# Ray directions and origins
-ray_origins = surface_points.clone()
+# Ray origins and directions using NumPy.
+ray_origins = surface_points.copy()
 ray_origins[:, 1] = vol_shape[1] // 2  # Set Y to center of volume
-ray_origins[:, 0] = 0  # Set Z to 0
-ray_directions = torch.nn.functional.normalize(surface_points - ray_origins, dim=1)
+ray_origins[:, 0] = 0                 # Set Z to 0
+
+# Compute ray directions by normalizing the vector differences.
+vecs = surface_points - ray_origins
+norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+ray_directions = vecs / norms
 
 # Perform ray-mesh intersection
 hit_points = perform_ray_mesh_intersection(mesh, ray_origins, ray_directions)
@@ -382,12 +347,11 @@ hit_points = perform_ray_mesh_intersection(mesh, ray_origins, ray_directions)
 print("Surface Points: ", surface_points.shape[0])
 hit_points_3d = np.array(hit_points)
 
-
-# visualize_3d_points(hit_points_3d, extra_points_zyx=cylinder_points_zyx[1000:1002], mesh=mesh, volume_shape_zyx=vol_shape)
-
-print(f"uv_grid shape: {uv_grid_shape} uv_grid num points: {uv_grid.shape[0]}")
+# Example visualization calls (uncomment to run):
+#visualize_3d_points(hit_points_3d, extra_points_zyx=cylinder_points_zyx[1000:1002], mesh=mesh, volume_shape_zyx=vol_shape)
+# print(f"uv_grid shape: {uv_grid_shape} uv_grid num points: {uv_grid.shape[0]}")
 uv_grid_highlighted = uv_grid[1000:1002]  # example highlighted indices
-# visualize_uv_grid(uv_grid, uv_grid_highlighted)
+#visualize_uv_grid(uv_grid, uv_grid_highlighted)
 
 cols, rows = uv_grid_shape
 shape_2d = (rows, cols)
@@ -403,16 +367,18 @@ horizontal_distortion = spacing_theta / horizontal_avg
 vertical_distortion = spacing_x / vertical_avg
 
 # Visualize the computed heatmaps for average distances
-visualize_distance_heatmaps(vertical_distortion, 
-                            horizontal_distortion, 
-                            ylim=(45, 300), 
-                            title_vertical="Vertical distortion factor\n of embryo to cylinder mapping", 
+visualize_distance_heatmaps(vertical_distortion,
+                            horizontal_distortion,
+                            ylim=(45, 300),
+                            title_vertical="Vertical distortion factor\n of embryo to cylinder mapping",
                             title_horizontal="Horizontal distortion factor\n of embryo to cylinder mapping")
 
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"Done in {elapsed_time:.4f} seconds")
 
-# TODO: 
+# TODO:
 # + interpolate the distortion map?
 # + convert distances to distortion factors by 1/(uv_grid sampling rates)
+
+# - rescale distortion maps to defined size
