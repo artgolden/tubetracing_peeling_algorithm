@@ -361,18 +361,18 @@ if __name__ == "__main__":
     point_cloud = np.load("outs/hull_embryo_surface_points.npy")[:, [2, 1, 0]]
 
     # Generate grid points on half-cylinder surface
-    image_shape = (embryo_vol_shape[2], round(np.pi * max_r + 1))
+    full_size_projection_shape = (embryo_vol_shape[2], round(np.pi * max_r + 1))
 
     # ===== Main script =====
-    num_points_theta = image_shape[1] // approx_spacing_theta
-    num_points_x = image_shape[0] // approx_spacing_x
-    spacing_u = image_shape[1] / num_points_theta
-    spacing_v = image_shape[0] / num_points_x
+    num_points_theta = full_size_projection_shape[1] // approx_spacing_theta
+    num_points_x = full_size_projection_shape[0] // approx_spacing_x
+    spacing_u = full_size_projection_shape[1] / num_points_theta
+    spacing_v = full_size_projection_shape[0] / num_points_x
     print(f"Spacing u: {spacing_u}, Spacing v: {spacing_v}")
 
 
     cylinder_points_zyx, uv_grid, uv_grid_shape = sparse_grid_on_half_cylinder(
-        image_shape=image_shape,
+        image_shape=full_size_projection_shape,
         num_points_theta=num_points_theta,
         num_points_x=num_points_x,
         radius=cylinder_radius,
@@ -417,7 +417,6 @@ if __name__ == "__main__":
     horizontal_avg = interpolate_nans_horizontally(horizontal_avg)
     horizontal_avg = interpolate_nan_elements(horizontal_avg)
 
-    full_size_projection_shape = image_shape
     print(f"Full size cylindrical projection shape: {full_size_projection_shape}")
     horizontal_distortion = resize_distortion_map(spacing_u / horizontal_avg, full_size_projection_shape)
     vertical_distortion = resize_distortion_map(spacing_v / vertical_avg, full_size_projection_shape)
