@@ -270,6 +270,47 @@ def interpolate_nans_horizontally(matrix: np.ndarray, max_interpolation_distance
 
     return interpolated
 
+def resize_distortion_map(matrix: np.ndarray, target_shape: tuple) -> np.ndarray:
+    """
+    Resizes a 2D distortion map matrix to a new target shape using linear interpolation.
+    This function tolerates NaN values by excluding them from the interpolation dataset.
+    Points in the target grid falling outside the convex hull of valid data will remain NaN.
+
+    Parameters:
+        matrix (np.ndarray): 2D numpy array representing the distortion map, possibly containing NaNs.
+        target_shape (tuple): Tuple (target_rows, target_cols) specifying the desired shape.
+
+    Returns:
+        np.ndarray: A 2D numpy array of shape target_shape with values interpolated from the input matrix.
+    """
+    from scipy.interpolate import griddata
+
+    orig_rows, orig_cols = matrix.shape
+    target_rows, target_cols = target_shape
+
+    # Create a grid of coordinates for the original matrix.
+    grid_orig = np.mgrid[0:orig_rows, 0:orig_cols]
+    # Stack coordinates into (num_points, 2) and flatten the matrix values.
+    coords_orig = np.stack((grid_orig[0].ravel(), grid_orig[1].ravel()), axis=-1)
+    values = matrix.ravel()
+
+    # Exclude NaN values from the interpolation dataset.
+    valid_mask = ~np.isnan(values)
+    coords_valid = coords_orig[valid_mask]
+    values_valid = values[valid_mask]
+
+    # Create the target grid coordinates.
+    target_x = np.linspace(0, orig_rows - 1, target_rows)
+    target_y = np.linspace(0, orig_cols - 1, target_cols)
+    grid_target = np.meshgrid(target_x, target_y, indexing='ij')
+    coords_target = np.stack((grid_target[0].ravel(), grid_target[1].ravel()), axis=-1)
+
+    # Perform linear interpolation; points outside the convex hull will be set to NaN.
+    interpolated_values = griddata(coords_valid, values_valid, coords_target, method='linear')
+    resized_matrix = interpolated_values.reshape(target_shape)
+
+    return resized_matrix
+
 def visualize_distance_heatmaps(vertical_avg: np.ndarray, horizontal_avg: np.ndarray,
                                 title_vertical: str = "Vertical Neighbor Avg Distance",
                                 title_horizontal: str = "Horizontal Neighbor Avg Distance",
@@ -370,20 +411,22 @@ vertical_avg = interpolate_nan_elements(vertical_avg)
 horizontal_avg = interpolate_nans_horizontally(horizontal_avg)
 horizontal_avg = interpolate_nan_elements(horizontal_avg)
 
-horizontal_distortion = spacing_u / horizontal_avg
-vertical_distortion = spacing_v / vertical_avg
+full_size_projection_shape = image_shape
+print(f"Full size cylindrical projection shape: {full_size_projection_shape}")
+horizontal_distortion = resize_distortion_map(spacing_u / horizontal_avg, full_size_projection_shape)
+vertical_distortion = resize_distortion_map(spacing_v / vertical_avg, full_size_projection_shape)
+
+
 
 print(f"Vertical distortion matrix shape: {vertical_distortion.shape}")
 print(f"Horizontal distortion matrix shape: {horizontal_distortion.shape}")
-full_size_projection_shape = image_shape
-print(f"Full size cylindrical projection shape: {full_size_projection_shape}")
 
 
 end_time = time.time()
 # Visualize the computed heatmaps for average distances
 visualize_distance_heatmaps(vertical_distortion,
                             horizontal_distortion,
-                            ylim=(45, 300),
+                            # ylim=(45*2, 300*2),
                             title_vertical="Vertical distortion factor\n of embryo to cylinder mapping",
                             title_horizontal="Horizontal distortion factor\n of embryo to cylinder mapping")
 
@@ -393,5 +436,4 @@ print(f"Done in {elapsed_time:.4f} seconds")
 # TODO:
 # + interpolate the distortion map?
 # + convert distances to distortion factors by 1/(uv_grid sampling rates)
-
-# - rescale distortion maps to defined size
+# + rescale distortion maps to defined size
