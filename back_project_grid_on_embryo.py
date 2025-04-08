@@ -357,7 +357,7 @@ mesh, point_cloud = load_mesh_from_point_cloud("outs/hull_embryo_surface_points.
 # Generate grid points on half-cylinder surface
 image_shape = (vol_shape[2], round(np.pi * max_r + 1))
 cylinder_radius = max_r
-spacing_x = 5
+spacing_x = 2
 spacing_theta = 5
 cylinder_points_zyx, uv_grid, uv_grid_shape = sparse_grid_on_half_cylinder(
     image_shape=image_shape,
@@ -399,8 +399,15 @@ vertical_avg = interpolate_nan_elements(vertical_avg)
 horizontal_avg = interpolate_nans_horizontally(horizontal_avg)
 horizontal_avg = interpolate_nan_elements(horizontal_avg)
 
+horizontal_distortion = spacing_theta / horizontal_avg
+vertical_distortion = spacing_x / vertical_avg
+
 # Visualize the computed heatmaps for average distances
-visualize_distance_heatmaps(vertical_avg, horizontal_avg, ylim=(20, 120))
+visualize_distance_heatmaps(vertical_distortion, 
+                            horizontal_distortion, 
+                            ylim=(45, 300), 
+                            title_vertical="Vertical distortion factor\n of embryo to cylinder mapping", 
+                            title_horizontal="Horizontal distortion factor\n of embryo to cylinder mapping")
 
 end_time = time.time()
 elapsed_time = end_time - start_time
@@ -408,4 +415,4 @@ print(f"Done in {elapsed_time:.4f} seconds")
 
 # TODO: 
 # + interpolate the distortion map?
-# - convert distances to distortion factors by 1/(uv_grid sampling rates)
+# + convert distances to distortion factors by 1/(uv_grid sampling rates)
