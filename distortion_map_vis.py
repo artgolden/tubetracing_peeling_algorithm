@@ -13,6 +13,8 @@ These visualization routines aid in debugging and data presentation.
 import matplotlib.pyplot as plt
 import numpy as np
 import trimesh
+from io import BytesIO
+from PIL import Image
 
 
 def visualize_3d_points(
@@ -167,3 +169,82 @@ def visualize_distance_heatmaps(
 
     plt.tight_layout()
     plt.show()
+
+def get_distance_heatmaps(
+    vertical_avg: np.ndarray,
+    horizontal_avg: np.ndarray,
+    title_vertical: str = "Vertical Neighbor Avg Distance",
+    title_horizontal: str = "Horizontal Neighbor Avg Distance",
+    xlim: tuple = None,
+    ylim: tuple = None
+) -> Image.Image:
+    """
+    Generate heatmaps for vertical and horizontal distance matrices using color scales that
+    exclude the extreme top and bottom 2% of values (used only for color scaling), and handle NaNs.
+
+    Parameters:
+        vertical_avg (np.ndarray): 2D array representing vertical average distances.
+        horizontal_avg (np.ndarray): 2D array representing horizontal average distances.
+        title_vertical (str): Title for the vertical heatmap.
+        title_horizontal (str): Title for the horizontal heatmap.
+        xlim (tuple, optional): Limits for cropping along the x-axis.
+        ylim (tuple, optional): Limits for cropping along the y-axis.
+
+    Returns:
+        Image.Image: PIL Image of the composed heatmaps.
+    """
+    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+    v_data = vertical_avg.copy()
+    h_data = horizontal_avg.copy()
+
+    # Apply axis limits if provided
+    if ylim:
+        v_data = v_data[ylim[0]:ylim[1], :]
+        h_data = h_data[ylim[0]:ylim[1], :]
+    if xlim:
+        v_data = v_data[:, xlim[0]:xlim[1]]
+        h_data = h_data[:, xlim[0]:xlim[1]]
+
+    # Calculate percentile bounds excluding NaNs
+    vmin_v = np.nanpercentile(v_data, 2)
+    vmax_v = np.nanpercentile(v_data, 98)
+    vmin_h = np.nanpercentile(h_data, 2)
+    vmax_h = np.nanpercentile(h_data, 98)
+
+    # Create heatmap for vertical data with adjusted color scale
+    im_v = axs[0].imshow(
+        v_data,
+        interpolation="nearest",
+        aspect="auto",
+        origin="lower",
+        vmin=vmin_v,
+        vmax=vmax_v
+    )
+    axs[0].set_title(title_vertical)
+    axs[0].set_xlabel("U (embryo width)")
+    axs[0].set_ylabel("V (embryo length)")
+    fig.colorbar(im_v, ax=axs[0])
+
+    # Create heatmap for horizontal data with adjusted color scale
+    im_h = axs[1].imshow(
+        h_data,
+        interpolation="nearest",
+        aspect="auto",
+        origin="lower",
+        vmin=vmin_h,
+        vmax=vmax_h
+    )
+    axs[1].set_title(title_horizontal)
+    axs[1].set_xlabel("U (embryo width)")
+    axs[1].set_ylabel("V (embryo length)")
+    fig.colorbar(im_h, ax=axs[1])
+
+    plt.tight_layout()
+
+    # Save the plot to a PIL image and return it
+    buf = BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
+    return Image.open(buf)
+
