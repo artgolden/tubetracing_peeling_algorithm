@@ -338,4 +338,7 @@ def calculate_distortion_map(
     horizontal_distortion = resize_distortion_map(spacing_u / horizontal_avg, full_size_projection_shape)
     vertical_distortion = resize_distortion_map(spacing_v / vertical_avg, full_size_projection_shape)
 
+    horizontal_distortion = np.rot90(horizontal_distortion, k=1)
+    vertical_distortion = np.rot90(vertical_distortion, k=1)
+
     return vertical_distortion, horizontal_distortion

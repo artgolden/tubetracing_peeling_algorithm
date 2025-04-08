@@ -173,8 +173,8 @@ def visualize_distance_heatmaps(
 def get_distortion_heatmaps(
     vertical_dist: np.ndarray,
     horizontal_dist: np.ndarray,
-    title_vertical: str = "Vertical distortion factors",
-    title_horizontal: str = "Horizontal distortion factors",
+    title_vertical: str = "Vertical (along embryo axis) distortion factors",
+    title_horizontal: str = "Horizontal (perpendicular to embryo axis) distortion factors",
     xlim: tuple = None,
     ylim: tuple = None
 ) -> Image.Image:
@@ -221,8 +221,8 @@ def get_distortion_heatmaps(
         vmax=vmax_v
     )
     axs[0].set_title(title_vertical)
-    axs[0].set_xlabel("U (embryo width)")
-    axs[0].set_ylabel("V (embryo length)")
+    axs[0].set_xlabel("V (embryo length)")
+    axs[0].set_ylabel("U (embryo width)")
     fig.colorbar(im_v, ax=axs[0])
 
     # Create heatmap for horizontal data with adjusted color scale
@@ -235,8 +235,8 @@ def get_distortion_heatmaps(
         vmax=vmax_h
     )
     axs[1].set_title(title_horizontal)
-    axs[1].set_xlabel("U (embryo width)")
-    axs[1].set_ylabel("V (embryo length)")
+    axs[1].set_xlabel("V (embryo length)")
+    axs[1].set_ylabel("U (embryo width)")
     fig.colorbar(im_h, ax=axs[1])
 
     plt.tight_layout()

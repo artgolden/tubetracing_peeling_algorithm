@@ -1079,7 +1079,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         cartography_file = os.path.join(cartography_dir, f"tp_{timepoint}_cyl_proj.tif")
         tiff.imwrite(cartography_file, projection_cpu)
     
-    if do_distortion_maps and do_cylindrical_cartography and isinstance(peeling_mask, np.ndarray):
+    if do_distortion_maps and do_cylindrical_cartography and not isinstance(peeling_mask, np.ndarray):
         logging.info("Starting distortion maps calculaiton for cylindrical cartography")
         import distortion_map
         # Compute the distortion maps for cylindrical cartography
