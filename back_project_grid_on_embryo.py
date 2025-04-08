@@ -30,10 +30,9 @@ def visualize_3d_points(volume_points_zyx, volume_shape_zyx=None, highlighted_po
     
 
     if volume_shape_zyx is not None:
-        max_lim = max(volume_shape_zyx)
-        ax.set_xlim([0, max_lim])
-        ax.set_ylim([0, max_lim])
-        ax.set_zlim([0, max_lim])
+        ax.set_xlim([0, volume_shape_zyx[2] - 1])
+        ax.set_ylim([0, volume_shape_zyx[1] - 1])
+        ax.set_zlim([0, volume_shape_zyx[0] - 1])
 
     ax.set_aspect('equal')
 
@@ -90,13 +89,35 @@ def sparse_grid_on_half_cylinder(
     theta = np.linspace(-np.pi / 2, np.pi / 2, num_points_theta)
     x = np.arange(0, num_points_x * spacing_x, spacing_x)
 
+    u_coords = np.round(np.linspace(0, width, num_points_theta))
+    uu, vv = np.meshgrid(u_coords, x)
+    uv_grid = np.stack((uu.ravel(), vv.ravel()), axis=-1)
+
+
     theta_grid, x_grid = np.meshgrid(theta, x)
 
     z = radius * np.cos(theta_grid) + z0
     y = radius * np.sin(theta_grid) + y0
 
     points_3d = np.column_stack([z.ravel(), y.ravel(), x_grid.ravel()])
-    return points_3d
+    return points_3d, uv_grid
+
+def visualize_uv_grid(uv_grid, uv_grid_highlighted=None, title="UV Grid Visualization"):
+    """
+    Plot the UV grid with optional highlighted points.
+    """
+    plt.figure(figsize=(6, 6))
+    plt.scatter(uv_grid[:, 0], uv_grid[:,   1], c='blue', s=5, label='UV Grid')
+    if uv_grid_highlighted is not None:
+        plt.scatter(uv_grid_highlighted[:, 0], uv_grid_highlighted[:, 1], c='red', s=20, label='Highlighted')
+    plt.xlabel('U')
+    plt.ylabel('V')
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plt.axis('equal')
+    plt.tight_layout()
+    plt.show()
 
 # Get image volume shape
 vol_shape = tiff.imread("outs/down_cropped_tp_300.tif").shape
@@ -112,7 +133,7 @@ image_shape = (vol_shape[2], round(np.pi * max_r + 1))
 cylinder_radius = max_r
 spacing_x = 10
 spacing_theta = 10
-cylinder_points_zyx = sparse_grid_on_half_cylinder(
+cylinder_points_zyx, uv_grid = sparse_grid_on_half_cylinder(
     image_shape=image_shape,
     spacing_x=spacing_x,
     spacing_theta=spacing_theta,
@@ -135,6 +156,12 @@ hit_points = perform_ray_mesh_intersection(mesh, ray_origins, ray_directions)
 # Print or export intersection points
 # print("Total Intersections:", hit_points.shape[0])
 print("Surface Points: ", surface_points.shape[0])
-hit_points = np.array(hit_points)
+hit_points_3d = np.array(hit_points)
 
-visualize_3d_points(hit_points, extra_points_zyx=cylinder_points_zyx, mesh=mesh)
+
+visualize_3d_points(hit_points_3d[1000:1002], extra_points_zyx=cylinder_points_zyx[1000:1002], mesh=mesh, volume_shape_zyx=vol_shape) # #FFFFFFFFFFFFFF flip vol_shape coord order or something??
+
+print(f"uv_grid shape: {uv_grid.shape}")
+uv_grid_highlighted = uv_grid[1000:1002]  # example highlighted indices
+visualize_uv_grid(uv_grid, uv_grid_highlighted)
+
