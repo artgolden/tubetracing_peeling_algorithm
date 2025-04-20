@@ -943,6 +943,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                  thresholding_after_wbns: str = None,
                                  do_cylindrical_cartography=True,
                                  do_distortion_maps=True,
+                                 do_inverse_peeling=True,
                                  save_distortion_map_vis=True,
                                  prune_voxels_after_wbns=True,
                                  remove_outliers_after_wbns=True,
@@ -1068,6 +1069,19 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         os.makedirs(z_max_projection_dir, exist_ok=True)
         tiff.imwrite(os.path.join(z_max_projection_dir, f"tp_{timepoint}_z_max_projection.tif"), np.max(peeled_volume, axis=0).astype(np.uint8))
 
+    if do_inverse_peeling:
+        logging.info("Doing inverse peeling")
+        if isinstance(mask_upscaled, Volume):
+            mask_upscaled = mask_upscaled.tonumpy()
+        inv_mask = 255 - mask_upscaled.copy()
+        inv_peeled_volume = substract_mask_from_embryo_volume(full_res_zyx, inv_mask)
+        inv_z_max_projection_dir = os.path.join(output_dir, "z_max_projection_inv_peeled")
+        os.makedirs(inv_z_max_projection_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(inv_z_max_projection_dir, f"tp_{timepoint}_inv_peeled_z_max_projection.tif"), np.max(inv_peeled_volume, axis=0).astype(np.uint8))
+        
+        inv_peeled_volume_dir = os.path.join(output_dir, "inv_peeled_volume")
+        os.makedirs(inv_peeled_volume_dir, exist_ok=True)
+        tiff.imwrite(os.path.join(inv_peeled_volume_dir, f"tp_{timepoint}_inv_peeled_volume.tif"), inv_peeled_volume.astype(np.uint8))
 
     if do_cylindrical_cartography:
         logging.info("Starting cylindrical cartography projection")
