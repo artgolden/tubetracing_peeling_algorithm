@@ -734,44 +734,83 @@ def detect_embryo_surface_wbns(volume: np.ndarray, threshold: str=None):
     from wbns import substract_background
     from skimage import filters
 
+    # Bring into the right numpy order
     volume = Backend.to_numpy(volume)
-    volume = np.transpose(volume, (2,1,0))
-    substracted_bkg = substract_background(volume, 4, 1)
+    volume = np.transpose(volume, (2, 1, 0))
+
+    # subtract background once
+    subtracted_bkg = substract_background(volume, 4, 1)
+
+    # define all available methods
+    methods = ["otsu", "yen", "li", "isodata",
+               "minimum", "triangle", "mean", "sauvola"]
+
+    # build ordered list of methods to try
     if threshold is None:
-        threshold = "isodata"
-    match threshold:
-        case "otsu":
-            th = filters.threshold_otsu(substracted_bkg)
-        case "yen":
-            th = filters.threshold_yen(substracted_bkg)
-        case "li":
-            th = filters.threshold_li(substracted_bkg)
-        case "isodata":
-            th = filters.threshold_isodata(substracted_bkg)
-        case "minimum":
-            th = filters.threshold_minimum(substracted_bkg)
-        case "yen":
-            th = filters.threshold_yen(substracted_bkg)
-        case "triangle":
-            th = filters.threshold_triangle(substracted_bkg)
-        case "mean":
-            th = filters.threshold_mean(substracted_bkg)
-        case "sauvola":
-            th = filters.threshold_sauvola(substracted_bkg)
-    mask = substracted_bkg >= th
-    mask = np.transpose(mask, (2,1,0))
+        ordered = ["isodata"] + [m for m in methods if m != "isodata"]
+    else:
+        if threshold not in methods:
+            raise ValueError(f"Unknown threshold method: {threshold!r}")
+        ordered = [threshold] + [m for m in methods if m != threshold]
 
-    structuring_element = np.ones((3,3,3))
-    eroded_mask = cpu_ndimage.binary_erosion(mask, structure=structuring_element).astype(mask.dtype)  # Keep original datatype
-    # Zerroing out the border to remove artifacts that wbns generates
-    zero_y = int(eroded_mask.shape[1] * (RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO - 1) / 2) 
-    zero_x = int(eroded_mask.shape[2] * (RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO - 1) / 2)
-    eroded_mask[:,-zero_y:,:] = False
-    eroded_mask[:,:zero_y,:] = False
-    eroded_mask[:,:,-zero_x:] = False
-    eroded_mask[:,:,:zero_x] = False
+    chosen_th = None
+    chosen_method = None
 
-    return (eroded_mask, substracted_bkg)
+    # try each until mask is ≤ 80% true
+    for method in ordered:
+        logging.info("Trying thresholding method: %s", method)
+        match method:
+            case "otsu":
+                th = filters.threshold_otsu(subtracted_bkg)
+            case "yen":
+                th = filters.threshold_yen(subtracted_bkg)
+            case "li":
+                th = filters.threshold_li(subtracted_bkg)
+            case "isodata":
+                th = filters.threshold_isodata(subtracted_bkg)
+            case "minimum":
+                th = filters.threshold_minimum(subtracted_bkg)
+            case "triangle":
+                th = filters.threshold_triangle(subtracted_bkg)
+            case "mean":
+                th = filters.threshold_mean(subtracted_bkg)
+            case "sauvola":
+                th = filters.threshold_sauvola(subtracted_bkg)
+            case _:
+                # should never happen
+                continue
+
+        mask0 = subtracted_bkg >= th
+        frac = mask0.mean()
+        logging.info("Method %s yields %.1f%% true voxels", method, frac * 100)
+
+        if frac <= 0.8:
+            chosen_th = th
+            chosen_method = method
+            break
+
+    if chosen_th is None:
+        logging.warning("All thresholding methods produced >80%% true voxels; aborting")
+        return None, None
+
+    logging.info("Selected threshold method %s with threshold=%.4g", chosen_method, chosen_th)
+
+    # reorder mask back to original axes
+    mask = np.transpose(mask0, (2, 1, 0))
+
+    # 3D erosion
+    struct_elem = np.ones((3, 3, 3), dtype=bool)
+    eroded = cpu_ndimage.binary_erosion(mask, structure=struct_elem).astype(mask.dtype)
+
+    # zero out borders
+    zero_y = int(eroded.shape[1] * (RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO - 1) / 2)
+    zero_x = int(eroded.shape[2] * (RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO - 1) / 2)
+    eroded[:, -zero_y:, :] = False
+    eroded[:, :zero_y, :] = False
+    eroded[:, :, -zero_x:] = False
+    eroded[:, :, :zero_x] = False
+
+    return eroded, subtracted_bkg
 
 def load_and_merge_illuminations(ill_file_paths: list[str]):
     images = [load_3d_volume(f) for f in ill_file_paths]
@@ -952,7 +991,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                  do_save_z_max_projection=True,
                                  do_save_mask=True,
                                  do_save_wbns_output=True,
-                                 load_surface_voxels_from_file: bool = False) -> bool:
+                                 load_surface_voxels_from_file: bool = False) -> Tuple[bool, np.ndarray]:
     logging.info("Starting peel_embryo_with_cartography")
     xp = Backend.get_xp_module()
     sp = Backend.get_sp_module()
@@ -979,6 +1018,9 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                     else:
                         logging.warning(f"Peeling: File {file_path} not found. Falling back to WBNS detection.")
                         sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx, threshold=thresholding_after_wbns)
+                        if sparce_voxels_on_embryo_surface is None:
+                            logging.warning("WBNS failed to detect the surface. Aborting peeling.")
+                            return False, None
                         if prune_voxels_after_wbns:
                             from prune_volume import prune_volume
                             logging.info("Pruning volume after WBNS")
@@ -998,6 +1040,9 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                 else:
                     logging.info("Peeling: Using WBNS wavelet based background subtraction for detecting only embryo structures.")
                     sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx, threshold=thresholding_after_wbns)
+                    if sparce_voxels_on_embryo_surface is None:
+                        logging.warning("WBNS failed to detect the surface. Aborting peeling.")
+                        return False, None
                     if prune_voxels_after_wbns:
                         from prune_volume import prune_volume
                         logging.info("Pruning volume after WBNS")
@@ -1023,7 +1068,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         logging.debug(f"Number of detected points: {len(points)}")
         if len(points) > 300000:
             logging.error("Too many points detected. This is likely due to a bad surface segmentation. Embryo peeling failed.")
-            return False, False
+            return False, None
 
         points = add_projected_embryo_outline_points(downsampled_zyx.shape, points)
         if do_save_points:
