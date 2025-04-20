@@ -1036,6 +1036,12 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
 
         logging.debug(f"Mask shape: {mask.shape}, converting mask to numpy and transposing.")
         mask_np = np.transpose(mask.tonumpy(), (2, 1, 0))
+        # TODO: Find a proper fix for this dirty hack
+        mask_np[-5] = mask_np[-6]
+        mask_np[-4] = mask_np[-6]
+        mask_np[-3] = mask_np[-6]
+        mask_np[-2] = mask_np[-6]
+        mask_np[-1] = mask_np[-6]
         logging.debug(f"Upscaling mask")
         mask_upscaled = upscale_mask(mask_np, full_res_zyx.shape)
         if do_save_mask:
@@ -1060,7 +1066,8 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
     if do_save_z_max_projection:
         z_max_projection_dir = os.path.join(output_dir, "z_max_projection")
         os.makedirs(z_max_projection_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(z_max_projection_dir, f"tp_{timepoint}_z_max_projection.tif"), np.max(peeled_volume[:-12], axis=0).astype(np.uint8))
+        tiff.imwrite(os.path.join(z_max_projection_dir, f"tp_{timepoint}_z_max_projection.tif"), np.max(peeled_volume, axis=0).astype(np.uint8))
+
 
     if do_cylindrical_cartography:
         logging.info("Starting cylindrical cartography projection")
