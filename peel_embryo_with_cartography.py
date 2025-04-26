@@ -973,6 +973,28 @@ def copy_script_with_commit_hash(output_dir):
     except Exception as e:
         print(f"Warning: could not copy source code of the script: {e}")
 
+def save_tiff_to_subfolder(image: np.ndarray,
+                           output_dir: str,
+                           subfolder: str,
+                           filename: str,
+                           dtype: type = None) -> None:
+    """
+    Saves a TIFF image to a specified subfolder within the output directory.
+
+    Parameters:
+        image: Image array to save.
+        output_dir: Base directory where subfolder resides.
+        subfolder: Name of the subdirectory under output_dir.
+        filename: Name of the TIFF file to save.
+        dtype: Optional data type to cast the image before saving.
+    """
+    dir_path = os.path.join(output_dir, subfolder)
+    os.makedirs(dir_path, exist_ok=True)
+    filepath = os.path.join(dir_path, filename)
+    if dtype is not None:
+        image = image.astype(dtype)
+    tiff.imwrite(filepath, image, compression="zlib")
+
 def peel_embryo_with_cartography(full_res_zyx: np.ndarray, 
                                  downsampled_zyx: np.ndarray, 
                                  output_dir: str, 
@@ -1105,14 +1127,19 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
     logging.info("Peeling: Substracting mask from embryo volume")
     peeled_volume = substract_mask_from_embryo_volume(full_res_zyx, mask_upscaled)
     if do_save_peeled_volume:
-        peeled_volume_dir = os.path.join(output_dir, "peeled_volume")
-        os.makedirs(peeled_volume_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(peeled_volume_dir, f"tp_{timepoint}_peeled_volume.tif"), peeled_volume.astype(np.uint8))
+        save_tiff_to_subfolder(peeled_volume,
+                               output_dir,
+                               "peeled_volume",
+                               f"tp_{timepoint}_peeled_volume.tif",
+                               np.uint8)
 
     if do_save_z_max_projection:
-        z_max_projection_dir = os.path.join(output_dir, "z_max_projection")
-        os.makedirs(z_max_projection_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(z_max_projection_dir, f"tp_{timepoint}_z_max_projection.tif"), np.max(peeled_volume, axis=0).astype(np.uint8))
+        max_proj = np.max(peeled_volume, axis=0)
+        save_tiff_to_subfolder(max_proj,
+                               output_dir,
+                               "z_max_projection",
+                               f"tp_{timepoint}_z_max_projection.tif",
+                               np.uint8)
 
     if do_inverse_peeling:
         logging.info("Doing inverse peeling")
@@ -1120,13 +1147,16 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
             mask_upscaled = mask_upscaled.tonumpy()
         inv_mask = 255 - mask_upscaled.copy()
         inv_peeled_volume = substract_mask_from_embryo_volume(full_res_zyx, inv_mask)
-        inv_z_max_projection_dir = os.path.join(output_dir, "z_max_projection_inv_peeled")
-        os.makedirs(inv_z_max_projection_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(inv_z_max_projection_dir, f"tp_{timepoint}_inv_peeled_z_max_projection.tif"), np.max(inv_peeled_volume, axis=0).astype(np.uint8))
-        
-        inv_peeled_volume_dir = os.path.join(output_dir, "inv_peeled_volume")
-        os.makedirs(inv_peeled_volume_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(inv_peeled_volume_dir, f"tp_{timepoint}_inv_peeled_volume.tif"), inv_peeled_volume.astype(np.uint8))
+        save_tiff_to_subfolder(np.max(inv_peeled_volume, axis=0),
+                               output_dir,
+                               "z_max_projection_inv_peeled",
+                               f"tp_{timepoint}_inv_peeled_z_max_projection.tif",
+                               np.uint8)
+        save_tiff_to_subfolder(inv_peeled_volume,
+                               output_dir,
+                               "inv_peeled_volume",
+                               f"tp_{timepoint}_inv_peeled_volume.tif",
+                               np.uint8)
 
     if do_cylindrical_cartography:
         logging.info("Starting cylindrical cartography projection")
@@ -1139,11 +1169,10 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         logging.debug(f"Peeled volume origin coordinates: {get_origin(peeled_volume)}, x and y crop: {x_crop}, {y_crop}, shape: {peeled_volume.shape}")
         cylindrical_projection = cylindrical_cartography_projection(peeled_volume, get_origin(peeled_volume))
         projection_cpu = Backend.to_numpy(cylindrical_projection, dtype=np.uint8)
-
-        cartography_dir = os.path.join(output_dir, "cylindrical_cartography")
-        os.makedirs(cartography_dir, exist_ok=True)
-        cartography_file = os.path.join(cartography_dir, f"tp_{timepoint}_cyl_proj.tif")
-        tiff.imwrite(cartography_file, projection_cpu)
+        save_tiff_to_subfolder(projection_cpu,
+                               output_dir,
+                               "cylindrical_cartography",
+                               f"tp_{timepoint}_cyl_proj.tif")
     
     if do_distortion_maps and do_cylindrical_cartography and not isinstance(peeling_mask, np.ndarray):
         logging.info("Starting distortion maps calculaiton for cylindrical cartography")
@@ -1176,8 +1205,6 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
             heatmap_dir = os.path.join(distortion_maps_dir, "heatmaps")
             os.makedirs(heatmap_dir, exist_ok=True)
             heatmap.save(os.path.join(heatmap_dir, f"tp_{timepoint}_distortion_heatmaps.png"))
-
-    
     return True, mask_upscaled
 
 
