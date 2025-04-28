@@ -55,7 +55,7 @@ Current TODO:
 + Need to implement dirt detection filtering by checking each point and radius 4 around it, if removing all points in this radius makes the convex hull significantly smaller/change shape, then remove the point. Or if all other close points are much closer to embryo center that that point. Convex hull is sequential and expensive algorithm, so it would not work to recalculate it many many times.
 - On top of the embryo surface, since 2 illumination stiching is done using averaging, there ends up blurry halo, especially on tangential slices that gets recognised by WBNS surface detection and leads to errors in the mask. Possible fix is do the illumination stitching using linear blending instead of averaging.
 - Change the crop rotated rectangle 3d code to ndimage affine_transform with default option of interpolation order=4 to minimize artifacts. Expoose interpolation order as cli argument.
-
+- Add an option to have 3 separate layers peeled with different thicknesses each
 
 
 For later:

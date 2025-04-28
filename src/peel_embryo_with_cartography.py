@@ -1028,7 +1028,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                 volume_mask_dilation_radius = 3
                 points = detect_embryo_surface_tubetracing(downsampled_zyx)
             case "wbns":
-                volume_mask_dilation_radius = -9
+                volume_mask_dilation_radius = -3
                 if load_surface_voxels_from_file:
                     # Check if the file with the precomputed surface voxels exists.
                     points_dir = os.path.join(output_dir, "surface_voxels_mask")
