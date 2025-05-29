@@ -1285,7 +1285,8 @@ def process_time_series(timeseries_key: str,
                         compute_backend: Backend,
                         reuse_peeling_mask: bool,
                         thresholding_after_wbns=None,
-                        load_surface_voxels_from_file: bool = False):
+                        load_surface_voxels_from_file: bool = False,
+                        only_first_timepoint: bool = False):
     """
     Process a single time series.
     
@@ -1328,6 +1329,9 @@ def process_time_series(timeseries_key: str,
         # Save crop shape from first timepoint and use for subsequent timepoints
         if target_crop_shape is None and crop_shape is not None:
             target_crop_shape = crop_shape
+        if only_first_timepoint:
+            logging_broadcast("'only_first_timepoint' parameter is enabled, skipping further timepoints")
+            break
 
 
 def main():
@@ -1346,6 +1350,8 @@ def main():
                         help="List of patterns; time series whose keys contain any of these will be skipped.")
     parser.add_argument("--load_surface_voxels", action="store_true", 
                         help="If set, load sparce_voxels_on_embryo_surface from file if available and skip WBNS detection and saving of only_structures_wbns.")
+    parser.add_argument("--only_first_timepoint", action="store_true", 
+                        help="If set, load skip processing timepoints after first for each dataset. Useful for pregenerating masks for manual fixing.")
     args = parser.parse_args()
     
     input_folder = args.input_folder
@@ -1410,7 +1416,8 @@ def main():
                 compute_backend, 
                 args.reuse_peeling, 
                 args.wbns_threshold,
-                args.load_surface_voxels
+                args.load_surface_voxels,
+                args.only_first_timepoint
             )
         
         logging.info("Processing complete")
