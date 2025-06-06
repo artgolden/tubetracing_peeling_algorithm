@@ -995,6 +995,44 @@ def save_tiff_to_subfolder(image: np.ndarray,
         image = image.astype(dtype)
     tiff.imwrite(filepath, image, compression="zlib")
 
+def embryo_to_surface_dist_mask(soi_mask: np.ndarray[bool],
+                        start_layer: int,
+                        end_layer: int
+                        ) -> np.ndarray:
+    """
+    Given a Surface Of Interest (SOI) embryo mask computes it's distance transform. 
+    
+    """
+    from scipy.ndimage import distance_transform_cdt
+    from scipy.ndimage import binary_dilation
+
+    # expand the soi_mask to start layer
+    expand_voxels = 0
+    mask = soi_mask
+    if start_layer < 0:
+        expand_voxels = abs(start_layer)
+        mask = binary_dilation(soi_mask, iterations=expand_voxels)
+    
+    # Do distance transform
+    dt = distance_transform_cdt(mask, metric="taxicab")
+
+    end_dist = end_layer + expand_voxels
+    dt[dt > end_dist] = 0
+    return dt
+
+def embryo_to_onion_z_stack(embryo_volume: np.ndarray,
+                           onion_dist_mask: np.ndarray,
+                           chunk_ranges: list[range]
+                           ):
+    """
+    Peeling the embryo layer by layer doing a Z-projection of the layer and converting to a stack of z-projected surface layers. 
+    """
+    # Loop
+        # Shrink the mask by layer_thickness
+
+        # substract the shrunken mask,
+    pass
+
 def peel_embryo_with_cartography(full_res_zyx: np.ndarray, 
                                  downsampled_zyx: np.ndarray, 
                                  output_dir: str, 
@@ -1118,6 +1156,8 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
             os.makedirs(mask_dir, exist_ok=True)
             tiff.imwrite(os.path.join(mask_dir, f"tp_{timepoint}_mask.tif"), mask_np)
             np.save(os.path.join(mask_dir, f"tp_{timepoint}_upscaled_mask.npy"), mask_upscaled)
+            dist_mask = embryo_to_surface_dist_mask(mask_np, -10, 20) ################################################################## DEBUG
+            tiff.imwrite(os.path.join(mask_dir, f"tp_{timepoint}_distance_mask.tif"), dist_mask)
     else: 
         logging.info("Peeling: Using provided mask")
         print("Peeling: Using provided mask")
