@@ -1001,7 +1001,6 @@ def embryo_to_surface_dist_mask(soi_mask: np.ndarray[bool],
                         ) -> np.ndarray:
     """
     Given a Surface Of Interest (SOI) embryo mask computes it's distance transform. 
-    
     """
     from scipy.ndimage import distance_transform_cdt
     from scipy.ndimage import binary_dilation
@@ -1020,20 +1019,87 @@ def embryo_to_surface_dist_mask(soi_mask: np.ndarray[bool],
     dt[dt > end_dist] = 0
     return dt
 
-def embryo_to_onion_z_stack(embryo_volume: np.ndarray,
-                           onion_dist_mask: np.ndarray,
-                           chunk_ranges: list[range]
+def embryo_to_onion_z_stack(embryo_volume_zyx: np.ndarray,
+                           onion_dist_mask_zyx: np.ndarray,
+                           chunk_ranges: list[range] = None
                            ):
     """
-    Peeling the embryo layer by layer doing a Z-projection of the layer and converting to a stack of z-projected surface layers. 
+    Peeling the embryo layer by layer, doing a Z-projection of each layer and converting to a stack
+    of Z-projected surface layers. If chunk_ranges is not given, peels one layer at a time;
+    otherwise peels layer by layer according to the ranges in chunk_ranges.
+
+    Parameters
+    ----------
+    embryo_volume_zyx : np.ndarray, shape (Z, Y, X)
+        A 3D intensity volume.
+    onion_dist_mask_zyx : np.ndarray, shape (Z, Y, X)
+        A 3D integer “onion” distance-transform mask (layers start at 1, 0 = background).
+    chunk_ranges : list of range, optional
+        If provided, each range defines a (start, stop) of layer‐indices to group together
+        into one Z‐projected slice. Ranges use Python semantics: start ≤ layer < stop.
+
+    Returns
+    -------
+    onion_layers_zyx : np.ndarray, shape (num_slices, Y, X)
+        A stack of Z‐projections (max‐intensity) of each peeled layer or chunk of layers.
+        If chunk_ranges is None, num_slices = max(onion_dist_mask_zyx) and each “slice”
+        corresponds to exactly one layer (layer=1, layer=2, …). Otherwise,
+        num_slices = len(chunk_ranges), and each slice is the projection of all voxels
+        whose layer ∈ chunk_ranges[i].
     """
-    # Loop
-        # Shrink the mask by layer_thickness
+    # 1. Ensure shapes match
+    if embryo_volume_zyx.shape != onion_dist_mask_zyx.shape:
+        raise ValueError(
+            f"Shape mismatch: embryo_volume_zyx has shape {embryo_volume_zyx.shape} "
+            f"but onion_dist_mask_zyx has shape {onion_dist_mask_zyx.shape}"
+        )
 
-        # substract the shrunken mask,
-    pass
+    Z, Y, X = embryo_volume_zyx.shape
 
-def peel_embryo_with_cartography(full_res_zyx: np.ndarray, 
+    # 2. Determine number of output layers/slices
+    if chunk_ranges is None:
+        # Layers run from 1 up to the maximum value in the mask
+        max_layer = int(onion_dist_mask_zyx.max())
+        num_slices = max_layer
+    else:
+        num_slices = len(chunk_ranges)
+
+    # 3. Pre-allocate output array, matching dtype of the input volume
+    onion_layers_zyx = np.zeros(
+        (num_slices, Y, X),
+        dtype=embryo_volume_zyx.dtype
+    )
+
+    # 4. For each slice: build a boolean mask of voxels to include, then Z-project
+    if chunk_ranges is None:
+        # Peel one layer at a time (layers = 1, 2, ..., max_layer)
+        for layer_idx in range(1, num_slices + 1):
+            # Select voxels exactly at this layer
+            layer_mask = (onion_dist_mask_zyx == layer_idx)
+
+            # Masked volume: zero out everything not in this layer
+            # Note: broadcasting works because layer_mask is bool of shape (Z,Y,X)
+            masked_vol = np.where(layer_mask, embryo_volume_zyx, 0)
+
+            # Z‐projection (max intensity along axis=0) → shape (Y, X)
+            onion_layers_zyx[layer_idx - 1] = masked_vol.max(axis=0)
+
+    else:
+        # Peel according to each range in chunk_ranges
+        for out_idx, r in enumerate(chunk_ranges):
+            # Range `r` includes layers r.start, r.start+1, ..., r.stop-1
+            # Build mask of voxels whose onion‐layer lies in that interval
+            chunk_mask = (
+                (onion_dist_mask_zyx >= r.start) &
+                (onion_dist_mask_zyx < r.stop)
+            )
+
+            masked_vol = np.where(chunk_mask, embryo_volume_zyx, 0)
+            onion_layers_zyx[out_idx] = masked_vol.max(axis=0)
+
+    return onion_layers_zyx
+
+def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                  downsampled_zyx: np.ndarray, 
                                  output_dir: str, 
                                  timepoint: int,
@@ -1156,8 +1222,9 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
             os.makedirs(mask_dir, exist_ok=True)
             tiff.imwrite(os.path.join(mask_dir, f"tp_{timepoint}_mask.tif"), mask_np)
             np.save(os.path.join(mask_dir, f"tp_{timepoint}_upscaled_mask.npy"), mask_upscaled)
-            dist_mask = embryo_to_surface_dist_mask(mask_np, -10, 20) ################################################################## DEBUG
+            dist_mask = embryo_to_surface_dist_mask(mask_upscaled, -10, 20) ################################################################## DEBUG
             tiff.imwrite(os.path.join(mask_dir, f"tp_{timepoint}_distance_mask.tif"), dist_mask)
+            
     else: 
         logging.info("Peeling: Using provided mask")
         print("Peeling: Using provided mask")
@@ -1180,6 +1247,20 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                "z_max_projection",
                                f"tp_{timepoint}_z_max_projection.tif",
                                np.uint8)
+        ############################################################################################################################### DEBUG
+        dist_mask = embryo_to_surface_dist_mask(mask_upscaled, -10, 30)
+        onion_z_stack = embryo_to_onion_z_stack(full_res_zyx, dist_mask)
+        save_tiff_to_subfolder(onion_z_stack,
+                        output_dir,
+                        "z_onion_stack",
+                        f"tp_{timepoint}_z_onion_stack.tif",
+                        np.uint8)
+        onion_z_stack = embryo_to_onion_z_stack(full_res_zyx, dist_mask, chunk_ranges=[range(3,12), range(23,30)])
+        save_tiff_to_subfolder(onion_z_stack,
+                        output_dir,
+                        "z_onion_stack",
+                        f"tp_{timepoint}_z_onion_stack_ranges.tif",
+                        np.uint8)
 
     if do_inverse_peeling:
         logging.info("Doing inverse peeling")
