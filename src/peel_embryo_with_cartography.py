@@ -1477,8 +1477,8 @@ def main():
     parser.add_argument("--only_first_timepoint", action="store_true", 
                         help="If set, load skip processing timepoints after first for each dataset. Useful for pregenerating masks for manual fixing.")
     parser.add_argument('--config_file', type=str, help='Path to YAML pipeline config')
-    parser.add_argument('--include_patterns', nargs='+', help='Filename patterns to include')
-    parser.add_argument('--exclude_patterns', nargs='+', help='Filename patterns to exclude')
+    parser.add_argument('--include_patterns', type=str, nargs='+', default=[], help='Filename patterns to include')
+    parser.add_argument('--exclude_patterns', type=str, nargs='+', default=[], help='Filename patterns to exclude')
     parser.add_argument('--create_subfolders', action='store_true', help='Create sub-folders per time series')
     args = parser.parse_args()
     
@@ -1519,19 +1519,24 @@ def main():
      
     with (NumpyBackend() if args.force_cpu else BestBackend(device_id=device_id)) as compute_backend:
         # Find all TIF files in the input folder
+        compiled_patterns = [re.compile(pattern) for pattern in config.include_patterns]
         tif_files = [
             os.path.join(input_folder, f)
             for f in os.listdir(input_folder)
             if f.lower().endswith(".tif")
         ]
-        logging.info(f"Found {len(tif_files)} TIF files in {input_folder}")
+        filtered_files = [
+            tif_file for tif_file in tif_files
+            if any(pattern.search(os.path.basename(tif_file)) for pattern in compiled_patterns)
+        ]
+        logging.info(f"Found {len(filtered_files)} TIF files in {input_folder} that match include patterns.")
         if not tif_files:
             logging.error("No TIF files found in input folder.")
             print("No TIF files found. Exiting.")
             return
         
         # Group files into time series and timepoints
-        timeseries_dict = group_files(tif_files)
+        timeseries_dict = group_files(filtered_files)
         logging.info(f"Found {len(timeseries_dict)} time series")
 
         if args.reuse_peeling:

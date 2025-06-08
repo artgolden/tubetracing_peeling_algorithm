@@ -87,7 +87,7 @@ class GlobalConfig:
     # CLI-overridable
     log_level: str = 'INFO'
     force_cpu: bool = False
-    include_patterns: List[str] = field(default_factory=list)
+    include_patterns: List[str] = [field(default_factory=lambda: ["*"])]
     exclude_patterns: List[str] = field(default_factory=list)
     create_subfolders: bool = False
     # Defaults for TimeSeriesConfig fields
