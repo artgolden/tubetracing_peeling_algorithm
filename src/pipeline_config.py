@@ -82,7 +82,6 @@ class TimeSeriesConfig:
                 if not isinstance(r, OnionRangeConfig):
                     raise ValueError("Each entry in onion_layer_ranges must be OnionRangeConfig instance")
 
-
 @dataclass
 class GlobalConfig:
     # CLI-overridable
@@ -164,15 +163,15 @@ class GlobalConfig:
                 raise ValueError(f"Time series key must be str, got {type(sid)}")
             ts_conf.validate()
 
-    def get_series_config(self, series_id: str) -> TimeSeriesConfig:
+    def get_series_config(self, series_id: Union[str, Any]) -> TimeSeriesConfig:
         """
         Return a TimeSeriesConfig with all fields filled: use per-series override when present,
-        otherwise take from global defaults.
+        otherwise take from global defaults. Accepts any series_id and normalizes it to string.
         """
-        # prepare override and merged dict
-        override = self.time_series_overrides.get(series_id)
+        sid = str(series_id)
+        override = self.time_series_overrides.get(sid)
         merged_values: Dict[str, Any] = {}
-        for field_name, _ in TimeSeriesConfig.__annotations__.items():
+        for field_name in TimeSeriesConfig.__annotations__:
             if override:
                 val = getattr(override, field_name)
                 if val is not None:
@@ -183,7 +182,6 @@ class GlobalConfig:
                 merged_values[field_name] = getattr(self, field_name)
             else:
                 merged_values[field_name] = None
-        # instantiate and validate
         merged = TimeSeriesConfig(**merged_values)
         merged.validate()
         return merged
@@ -192,27 +190,51 @@ class GlobalConfig:
 def load_config(yaml_path: str) -> GlobalConfig:
     """
     Load global and per-series pipeline configuration from a YAML file with validation.
+
+    Supports two forms for 'time_series':
+    1) Mapping: keys are series IDs (strings), even with hyphens, mapping to config dicts.
+    2) List of mappings: each entry must have an 'id' field with the series ID.
     """
     with open(yaml_path, 'r') as f:
         raw = yaml.safe_load(f) or {}
 
     # Build GlobalConfig from 'global' section
-    global_map = raw.get('global', {})
+    global_map = raw.get('global', {}) or {}
     # handle onion ranges
     if 'onion_z_range' in global_map:
         global_map['onion_z_range'] = OnionRangeConfig(**global_map['onion_z_range'])
     if 'onion_layer_ranges' in global_map:
         global_map['onion_layer_ranges'] = [OnionRangeConfig(**r) for r in global_map['onion_layer_ranges']]
+    if 'voxel_size' in global_map and global_map['voxel_size'] is not None:
+        global_map['voxel_size'] = tuple(global_map['voxel_size'])
     gc = GlobalConfig(**{k: v for k, v in global_map.items() if k in GlobalConfig.__annotations__})
 
-    # Per-series
-    ts_map = raw.get('time_series', {})
-    for sid, params in ts_map.items():
-        # convert any nested ranges
+    # Per-series: support dict or list
+    ts_section = raw.get('time_series', {}) or {}
+    if isinstance(ts_section, dict):
+        ts_items = ts_section.items()
+    elif isinstance(ts_section, list):
+        ts_items = []
+        for entry in ts_section:
+            if not isinstance(entry, dict):
+                raise ValueError(f"Each time_series entry must be a mapping, got {type(entry)}")
+            if 'id' not in entry:
+                raise ValueError("Each time_series entry must include an 'id' field.")
+            sid = str(entry['id'])
+            params = {k: v for k, v in entry.items() if k != 'id'}
+            ts_items.append((sid, params))
+    else:
+        raise ValueError("time_series section must be a mapping or a list of mappings")
+
+    for sid_raw, params in ts_items:
+        sid = str(sid_raw)
+        # convert any nested onion ranges
         if 'onion_z_range' in params:
             params['onion_z_range'] = OnionRangeConfig(**params['onion_z_range'])
         if 'onion_layer_ranges' in params:
             params['onion_layer_ranges'] = [OnionRangeConfig(**r) for r in params['onion_layer_ranges']]
+        if 'voxel_size' in params and params['voxel_size'] is not None:
+            params['voxel_size'] = tuple(params['voxel_size'])
         # filter to known TimeSeriesConfig keys
         filtered = {k: v for k, v in params.items() if k in TimeSeriesConfig.__annotations__}
         ts_conf = TimeSeriesConfig(**filtered)
