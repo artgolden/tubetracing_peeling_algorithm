@@ -32,7 +32,7 @@ global:
 time_series:
   - id: "timelapseID-20241008-143038_SPC-0001"
     only_first_timepoint: true
-    voxel_size: [2, 2, 2]
+    voxel_size: [2.34, 0.586, 0.586]
     surface_detection_mode: tubetracing
     wbns_threshold: mean
     onion_z_range:
@@ -103,7 +103,7 @@ def test_series_overrides_for_example(tmp_path):
     ts1 = cfg.get_series_config("timelapseID-20241008-143038_SPC-0001")
     assert isinstance(ts1, TimeSeriesConfig)
     assert ts1.only_first_timepoint is True
-    assert ts1.voxel_size == (2, 2, 2)
+    assert ts1.voxel_size == (2.34, 0.586, 0.586)
     assert ts1.surface_detection_mode == "tubetracing"
     assert ts1.wbns_threshold == "mean"
 

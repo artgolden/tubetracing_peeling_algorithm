@@ -23,7 +23,7 @@ class TimeSeriesConfig:
     only_first_timepoint: Optional[bool] = None
     load_surface_voxels: Optional[bool] = None
     add_series_id_to_filename: Optional[bool] = None
-    voxel_size: Optional[Tuple[int, int, int]] = None
+    voxel_size: Optional[Tuple[float, float, float]] = None
     surface_detection_mode: Optional[str] = None
     wbns_threshold: Optional[str] = None
     do_inverse_peeling: Optional[bool] = None
@@ -61,8 +61,8 @@ class TimeSeriesConfig:
         # voxel_size
         if self.voxel_size is not None:
             if (not isinstance(self.voxel_size, (list, tuple)) or len(self.voxel_size) != 3 
-                or not all(isinstance(x, int) and x > 0 for x in self.voxel_size)):
-                raise ValueError(f"voxel_size must be 3 positive ints, got {self.voxel_size}")
+                or not all((isinstance(x, float) or isinstance(x, int)) and x > 0 for x in self.voxel_size)):
+                raise ValueError(f"voxel_size must be 3 positive float, got {self.voxel_size}")
         # surface_detection_mode
         if self.surface_detection_mode is not None and self.surface_detection_mode not in SURFACE_MODES:
             raise ValueError(f"surface_detection_mode must be one of {SURFACE_MODES}, got {self.surface_detection_mode}")
@@ -95,7 +95,7 @@ class GlobalConfig:
     only_first_timepoint: bool = False
     load_surface_voxels: bool = False
     add_series_id_to_filename: bool = False
-    voxel_size: Tuple[int, int, int] = (1, 1, 1)
+    voxel_size: Tuple[float, float, float] = (2.34, 0.586, 0.586)
     surface_detection_mode: str = "wbns"
     wbns_threshold: Optional[str] = None
     do_inverse_peeling: bool = False
@@ -138,8 +138,8 @@ class GlobalConfig:
                 raise ValueError(f"{name} must be list of str, got {lst}")
         # voxel_size
         if (not isinstance(self.voxel_size, (list, tuple)) or len(self.voxel_size) != 3 
-            or not all(isinstance(x, int) and x>0 for x in self.voxel_size)):
-            raise ValueError(f"voxel_size must be 3 positive ints, got {self.voxel_size}")
+            or not all((isinstance(x, float) or isinstance(x, int)) and x > 0 for x in self.voxel_size)):
+            raise ValueError(f"voxel_size must be 3 positive float, got {self.voxel_size}")
         # surface_detection_mode
         if self.surface_detection_mode not in SURFACE_MODES:
             raise ValueError(f"surface_detection_mode must be one of {SURFACE_MODES}, got {self.surface_detection_mode}")
