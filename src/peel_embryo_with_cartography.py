@@ -28,6 +28,9 @@ from joblib import Parallel, delayed
 import torch
 import torch.nn.functional as F
 
+from pipeline_config import *
+
+
 DEBUG_MODE = True
 RATIO_FOR_EXPANDING_THE_CROPPED_REGION_AROUND_THE_EMBRYO = 1.15
 
@@ -1473,8 +1476,19 @@ def main():
                         help="If set, load sparce_voxels_on_embryo_surface from file if available and skip WBNS detection and saving of only_structures_wbns.")
     parser.add_argument("--only_first_timepoint", action="store_true", 
                         help="If set, load skip processing timepoints after first for each dataset. Useful for pregenerating masks for manual fixing.")
+    parser.add_argument('--config_file', type=str, help='Path to YAML pipeline config')
+    parser.add_argument('--include_patterns', nargs='+', help='Filename patterns to include')
+    parser.add_argument('--exclude_patterns', nargs='+', help='Filename patterns to exclude')
+    parser.add_argument('--create_subfolders', action='store_true', help='Create sub-folders per time series')
     args = parser.parse_args()
     
+    if args.config_file:
+        config = load_config(args.config_file)
+    else:
+        config = GlobalConfig()
+    merge_cli_overrides(config, args)
+
+
     input_folder = args.input_folder
     output_folder = args.output_folder if args.output_folder else os.path.join(input_folder, "outs")
     os.makedirs(output_folder, exist_ok=True)
