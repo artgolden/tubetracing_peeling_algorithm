@@ -1471,14 +1471,14 @@ def main():
     parser.add_argument("--reuse_peeling", action="store_true", help="Reuse embryo peeling mask from the first timepoint in time series.")
     parser.add_argument("--force_cpu", action="store_true", help="Force execution on CPU only.")
     parser.add_argument("--skip_patterns", type=str, nargs='*', default=[], 
-                        help="List of patterns; time series whose keys contain any of these will be skipped.")
+                        help="List of patterns; time series whose keys contain any of these will be skipped. Partial exact match required, not a regex.")
     parser.add_argument("--load_surface_voxels", action="store_true", 
                         help="If set, load sparce_voxels_on_embryo_surface from file if available and skip WBNS detection and saving of only_structures_wbns.")
     parser.add_argument("--only_first_timepoint", action="store_true", 
                         help="If set, load skip processing timepoints after first for each dataset. Useful for pregenerating masks for manual fixing.")
     parser.add_argument('--config_file', type=str, help='Path to YAML pipeline config')
     parser.add_argument('--include_patterns', type=str, nargs='+', default=[], help='Filename patterns to include')
-    parser.add_argument('--exclude_patterns', type=str, nargs='+', default=[], help='Filename patterns to exclude')
+    parser.add_argument('--exclude_patterns', type=str, nargs='+', default=[], help='Filename patterns to exclude. Applied after includes.')
     parser.add_argument('--create_subfolders', action='store_true', help='Create sub-folders per time series')
     args = parser.parse_args()
     
@@ -1519,7 +1519,7 @@ def main():
      
     with (NumpyBackend() if args.force_cpu else BestBackend(device_id=device_id)) as compute_backend:
         # Find all TIF files in the input folder
-        compiled_patterns = [re.compile(pattern) for pattern in config.include_patterns]
+        compiled_include = [re.compile(pattern) for pattern in config.include_patterns]
         tif_files = [
             os.path.join(input_folder, f)
             for f in os.listdir(input_folder)
@@ -1527,11 +1527,16 @@ def main():
         ]
         filtered_files = [
             tif_file for tif_file in tif_files
-            if any(pattern.search(os.path.basename(tif_file)) for pattern in compiled_patterns)
+            if any(pattern.search(os.path.basename(tif_file)) for pattern in compiled_include)
+        ]
+        compiled_exclude = [re.compile(pattern) for pattern in config.exclude_patterns]
+        filtered_files = [
+            tif_file for tif_file in filtered_files
+            if all(not pattern.search(os.path.basename(tif_file)) for pattern  in compiled_exclude)
         ]
         logging.info(f"Found {len(filtered_files)} TIF files in {input_folder} that match include patterns.")
-        if not tif_files:
-            logging.error("No TIF files found in input folder.")
+        if not filtered_files:
+            logging.error("No TIF files found in input folder after applying filters.")
             print("No TIF files found. Exiting.")
             return
         
