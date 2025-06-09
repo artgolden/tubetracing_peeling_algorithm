@@ -1024,7 +1024,7 @@ def embryo_to_surface_dist_mask(soi_mask: np.ndarray[bool],
 
 def embryo_to_onion_z_stack(embryo_volume_zyx: np.ndarray,
                            onion_dist_mask_zyx: np.ndarray,
-                           chunk_ranges: list[range] = None
+                           chunk_ranges: Union[list[range],List[OnionRangeConfig]] = None
                            ):
     """
     Peeling the embryo layer by layer, doing a Z-projection of each layer and converting to a stack
@@ -1106,6 +1106,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                                  downsampled_zyx: np.ndarray, 
                                  output_dir: str, 
                                  timepoint: int,
+                                 series_config: TimeSeriesConfig,
                                  peeling_mask: np.ndarray = None,
                                  surface_detection_mode: str = "wbns",
                                  thresholding_after_wbns: str = None,
@@ -1258,7 +1259,10 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                         "z_onion_stack",
                         f"tp_{timepoint}_z_onion_stack.tif",
                         np.uint8)
-        onion_z_stack = embryo_to_onion_z_stack(full_res_zyx, dist_mask, chunk_ranges=[range(3,12), range(23,30)])
+        chunk_ranges=[range(3,12), range(23,30)]
+        if series_config.onion_layer_ranges:
+            chunk_ranges = series_config.onion_layer_ranges
+        onion_z_stack = embryo_to_onion_z_stack(full_res_zyx, dist_mask, chunk_ranges=chunk_ranges)
         save_tiff_to_subfolder(onion_z_stack,
                         output_dir,
                         "z_onion_stack",
@@ -1336,6 +1340,7 @@ def process_timepoint(ill_file_paths: list,
                       output_dir: str, 
                       timepoint: int,
                       compute_backend: Backend,
+                      series_config: TimeSeriesConfig,
                       target_crop_shape=None,
                       peeling_mask=None,
                       thresholding_after_wbns=None,
@@ -1391,7 +1396,8 @@ def process_timepoint(ill_file_paths: list,
         timepoint, 
         peeling_mask=peeling_mask,
         thresholding_after_wbns=thresholding_after_wbns,
-        load_surface_voxels_from_file=load_surface_voxels_from_file
+        load_surface_voxels_from_file=load_surface_voxels_from_file,
+        series_config=series_config
     )
     if not peel_success:
         logging.error(f"Error peeling embryo. Aborting processing this timepoint")
@@ -1408,6 +1414,7 @@ def process_time_series(timeseries_key: str,
                         base_out_dir: str, 
                         compute_backend: Backend,
                         reuse_peeling_mask: bool,
+                        series_config: TimeSeriesConfig,
                         thresholding_after_wbns=None,
                         load_surface_voxels_from_file: bool = False,
                         only_first_timepoint: bool = False):
@@ -1438,6 +1445,7 @@ def process_time_series(timeseries_key: str,
             series_out_dir, 
             tp, 
             compute_backend, 
+            series_config=series_config,
             target_crop_shape=target_crop_shape, 
             peeling_mask=peeling_mask_whole_series,
             thresholding_after_wbns=thresholding_after_wbns,
@@ -1483,7 +1491,10 @@ def main():
     args = parser.parse_args()
     
     if args.config_file:
-        config = load_config(args.config_file)
+        yaml_path = args.config_file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        yaml_path = os.path.join(script_dir, yaml_path) if not os.path.isabs(yaml_path) else yaml_path
+        config = load_config(yaml_path)
     else:
         config = GlobalConfig()
     merge_cli_overrides(config, args)
@@ -1554,15 +1565,21 @@ def main():
             if any(pattern in series_key for pattern in args.skip_patterns):
                 logging_broadcast(f"Skipping time series '{series_key}' due to matching skip pattern {args.skip_patterns}")
                 continue
+            series_config = config.get_default_series_config()
+            for series_id in config.time_series_overrides.keys():
+                if series_id in series_key:
+                    series_config = config.get_series_config(series_id=series_id)
+            logging.info(f"Using the following time seires config object: {series_config}")
             process_time_series(
                 series_key, 
                 tp_dict, 
                 output_folder, 
                 compute_backend, 
-                args.reuse_peeling, 
-                args.wbns_threshold,
-                args.load_surface_voxels,
-                args.only_first_timepoint
+                series_config=series_config,
+                reuse_peeling_mask=args.reuse_peeling, 
+                thresholding_after_wbns=args.wbns_threshold,
+                load_surface_voxels_from_file=args.load_surface_voxels,
+                only_first_timepoint=args.only_first_timepoint,
             )
         
         logging.info("Processing complete")

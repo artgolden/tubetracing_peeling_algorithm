@@ -1,0 +1,42 @@
+global:
+  log_level: DEBUG
+  force_cpu: false
+  include_patterns:
+    - ".*.tif"
+  exclude_patterns: []
+  create_subfolders: true
+
+  reuse_peeling: true
+  only_first_timepoint: false
+  voxel_size: [2.34, 0.586, 0.586]
+  surface_detection_mode: wbns
+  wbns_threshold: otsu
+  do_save_mask: true
+  mask_dilation_radius: 3
+
+time_series:
+  - id: "timelapseID-20241008-143038_SPC-0001"
+    only_first_timepoint: true
+    wbns_threshold: mean
+    onion_z_range:
+      start: -10
+      stop: 30
+    onion_layer_ranges:
+      - start: -5
+        stop: 10
+      - start: 15
+        stop: 30
+
+  - id: "timelapseID-20240926-211701_SPC-0001"
+    reuse_peeling: true
+    do_save_mask: false
+    do_save_zmax_projection: true
+    mask_dilation_radius: 3
+    onion_z_range:
+      start: -15
+      stop: 30
+    onion_layer_ranges:
+      - start: -7
+        stop: 10
+      - start: 15
+        stop: 30

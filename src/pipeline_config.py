@@ -1,5 +1,5 @@
 import yaml
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import List, Tuple, Dict, Optional, Any, Union
 
 # Allowed values
@@ -112,7 +112,7 @@ class GlobalConfig:
     do_save_distortion_map_vis: bool = True
     mask_dilation_radius: int = 0
     do_onion_z_stack: bool = False
-    onion_init_include_range: OnionRangeConfig = OnionRangeConfig(0, 0)
+    onion_init_include_range: OnionRangeConfig = OnionRangeConfig(-10, 30)
     onion_layer_ranges: List[OnionRangeConfig] = field(default_factory=list)
     # Per-series overrides
     time_series_overrides: Dict[str, TimeSeriesConfig] = field(default_factory=dict)
@@ -185,6 +185,22 @@ class GlobalConfig:
         merged = TimeSeriesConfig(**merged_values)
         merged.validate()
         return merged
+    
+    def get_default_series_config(self) -> TimeSeriesConfig:
+        """
+        Return a TimeSeriesConfig built purely from the GlobalConfig defaults,
+        ignoring any entries in time_series_overrides.
+        """
+        # Collect all TimeSeriesConfig field names
+        ts_fields = [f.name for f in fields(TimeSeriesConfig)]
+
+        # Build kwargs by pulling each one directly off self
+        ts_kwargs = {name: getattr(self, name) for name in ts_fields}
+
+        # Instantiate and validate
+        cfg = TimeSeriesConfig(**ts_kwargs)
+        cfg.validate()
+        return cfg
 
 
 def load_config(yaml_path: str) -> GlobalConfig:

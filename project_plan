@@ -67,3 +67,4 @@ For later:
 - Check whether transposes from ZYX to XYZ are necessary for the vedo library.
 - When cropping right to the embryo, just assuming embryo is a circle when doing cylindrical projection is not good enough. Need better estimation of the embryo size and r_max.
 - Find out whether running get_isotropic_volume on GPU introduces some voxel errors from GPU specific interpolation and floating point conversions.
+- Fix leading * handling for include_patterns in config YAML
