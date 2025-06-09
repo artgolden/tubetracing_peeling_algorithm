@@ -108,10 +108,10 @@ def test_series_overrides_for_example(tmp_path):
     assert ts1.wbns_threshold == "mean"
 
     # Onion ranges
-    assert isinstance(ts1.onion_z_range, OnionRangeConfig)
-    assert (ts1.onion_z_range.start, ts1.onion_z_range.end) == (0, 15)
+    assert isinstance(ts1.onion_init_include_range, OnionRangeConfig)
+    assert (ts1.onion_init_include_range.start, ts1.onion_init_include_range.stop) == (0, 15)
     assert isinstance(ts1.onion_layer_ranges, list)
-    layer_ranges = [(r.start, r.end) for r in ts1.onion_layer_ranges]
+    layer_ranges = [(r.start, r.stop) for r in ts1.onion_layer_ranges]
     assert layer_ranges == [(0, 5), (6, 10), (11, 15)]
 
     # Second series: timelapseID-20241009-154500_SPC-0002

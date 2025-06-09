@@ -9,13 +9,13 @@ WBNS_THRESHOLDS = {None, 'otsu', 'yen', 'li', 'isodata', 'minimum', 'triangle', 
 @dataclass
 class OnionRangeConfig:
     start: int
-    end: int
+    stop: int
 
     def __post_init__(self):
-        if not isinstance(self.start, int) or not isinstance(self.end, int):
-            raise ValueError(f"OnionRangeConfig start/end must be ints, got {type(self.start)}/{type(self.end)}")
-        if self.start > self.end:
-            raise ValueError(f"OnionRangeConfig start ({self.start}) must be <= end ({self.end})")
+        if not isinstance(self.start, int) or not isinstance(self.stop, int):
+            raise ValueError(f"OnionRangeConfig start/end must be ints, got {type(self.start)}/{type(self.stop)}")
+        if self.start > self.stop:
+            raise ValueError(f"OnionRangeConfig start ({self.start}) must be <= end ({self.stop})")
 
 @dataclass
 class TimeSeriesConfig:
@@ -40,7 +40,7 @@ class TimeSeriesConfig:
     do_save_distortion_map_vis: Optional[bool] = None
     mask_dilation_radius: Optional[int] = None
     do_onion_z_stack: Optional[bool] = None
-    onion_z_range: Optional[OnionRangeConfig] = None
+    onion_init_include_range: Optional[OnionRangeConfig] = None
     onion_layer_ranges: Optional[List[OnionRangeConfig]] = None
 
     def validate(self):
@@ -73,7 +73,7 @@ class TimeSeriesConfig:
         if self.mask_dilation_radius is not None and not isinstance(self.mask_dilation_radius, int):
             raise ValueError(f"mask_dilation_radius must be int, got {type(self.mask_dilation_radius)}")
         # onion ranges
-        if self.onion_z_range is not None and not isinstance(self.onion_z_range, OnionRangeConfig):
+        if self.onion_init_include_range is not None and not isinstance(self.onion_init_include_range, OnionRangeConfig):
             raise ValueError("onion_z_range must be OnionRangeConfig instance or None")
         if self.onion_layer_ranges is not None:
             if not isinstance(self.onion_layer_ranges, list):
@@ -87,7 +87,7 @@ class GlobalConfig:
     # CLI-overridable
     log_level: str = 'INFO'
     force_cpu: bool = False
-    include_patterns: List[str] = [field(default_factory=lambda: ["*"])]
+    include_patterns: List[str] = field(default_factory=lambda: [".*"])
     exclude_patterns: List[str] = field(default_factory=list)
     create_subfolders: bool = False
     # Defaults for TimeSeriesConfig fields
@@ -97,7 +97,7 @@ class GlobalConfig:
     add_series_id_to_filename: bool = False
     voxel_size: Tuple[float, float, float] = (2.34, 0.586, 0.586)
     surface_detection_mode: str = "wbns"
-    wbns_threshold: Optional[str] = None
+    wbns_threshold: Optional[str] = "mean"
     do_inverse_peeling: bool = False
     do_prune_voxels_after_wbns: bool = True
     do_remove_outliers_after_wbns: bool = True
@@ -112,7 +112,7 @@ class GlobalConfig:
     do_save_distortion_map_vis: bool = True
     mask_dilation_radius: int = 0
     do_onion_z_stack: bool = False
-    onion_z_range: OnionRangeConfig = OnionRangeConfig(0, 0)
+    onion_init_include_range: OnionRangeConfig = OnionRangeConfig(0, 0)
     onion_layer_ranges: List[OnionRangeConfig] = field(default_factory=list)
     # Per-series overrides
     time_series_overrides: Dict[str, TimeSeriesConfig] = field(default_factory=dict)
@@ -150,7 +150,7 @@ class GlobalConfig:
         if not isinstance(self.mask_dilation_radius, int):
             raise ValueError(f"mask_dilation_radius must be int, got {type(self.mask_dilation_radius)}")
         # onion ranges
-        if not isinstance(self.onion_z_range, OnionRangeConfig):
+        if not isinstance(self.onion_init_include_range, OnionRangeConfig):
             raise ValueError("onion_z_range must be OnionRangeConfig instance")
         if not isinstance(self.onion_layer_ranges, list):
             raise ValueError("onion_layer_ranges must be list of OnionRangeConfig instances")
@@ -251,6 +251,6 @@ def merge_cli_overrides(config: GlobalConfig, args: Any) -> None:
     for attr in ('log_level','force_cpu','include_patterns','exclude_patterns','create_subfolders'):
         if hasattr(args, attr):
             val = getattr(args, attr)
-            if val is not None and val is not False:
+            if val is not None and val:
                 setattr(config, attr, val)
     config.validate()
