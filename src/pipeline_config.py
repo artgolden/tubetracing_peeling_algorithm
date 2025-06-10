@@ -19,6 +19,7 @@ class OnionRangeConfig:
 
 @dataclass
 class TimeSeriesConfig:
+    id: Optional[str] = None
     reuse_peeling: Optional[bool] = None
     only_first_timepoint: Optional[bool] = None
     load_surface_voxels: Optional[bool] = None
@@ -91,6 +92,7 @@ class GlobalConfig:
     exclude_patterns: List[str] = field(default_factory=list)
     create_subfolders: bool = False
     # Defaults for TimeSeriesConfig fields
+    id: str = "global"
     reuse_peeling: bool = False
     only_first_timepoint: bool = False
     load_surface_voxels: bool = False
@@ -183,10 +185,11 @@ class GlobalConfig:
             else:
                 merged_values[field_name] = None
         merged = TimeSeriesConfig(**merged_values)
+        merged.id = series_id
         merged.validate()
         return merged
     
-    def get_default_series_config(self) -> TimeSeriesConfig:
+    def get_default_series_config(self, series_id) -> TimeSeriesConfig:
         """
         Return a TimeSeriesConfig built purely from the GlobalConfig defaults,
         ignoring any entries in time_series_overrides.
@@ -199,6 +202,7 @@ class GlobalConfig:
 
         # Instantiate and validate
         cfg = TimeSeriesConfig(**ts_kwargs)
+        cfg.id = series_id
         cfg.validate()
         return cfg
 

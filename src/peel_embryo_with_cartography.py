@@ -1050,6 +1050,7 @@ def embryo_to_onion_z_stack(embryo_volume_zyx: np.ndarray,
         num_slices = len(chunk_ranges), and each slice is the projection of all voxels
         whose layer ∈ chunk_ranges[i].
     """
+    logging.debug(f"Making onion stack with ranges: {chunk_ranges}")
     # 1. Ensure shapes match
     if embryo_volume_zyx.shape != onion_dist_mask_zyx.shape:
         raise ValueError(
@@ -1140,7 +1141,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                 if load_surface_voxels_from_file:
                     # Check if the file with the precomputed surface voxels exists.
                     points_dir = os.path.join(output_dir, "surface_voxels_mask")
-                    file_path = os.path.join(points_dir, f"tp_{timepoint}_wbns_surface_voxels_true.tif")
+                    file_path = os.path.join(points_dir, f"{series_config.id}_tp_{timepoint}_wbns_surface_voxels_true_FIXED.tif")
                     if os.path.exists(file_path):
                         logging.info(f"Peeling: Loading sparce_voxels_on_embryo_surface from file: {file_path}")
                         sparce_voxels_on_embryo_surface = tiff.imread(file_path)
@@ -1163,10 +1164,10 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                         if do_save_wbns_output:
                             output_dir_wbns = os.path.join(output_dir, "wbns_output")
                             os.makedirs(output_dir_wbns, exist_ok=True)
-                            tiff.imwrite(os.path.join(output_dir_wbns, f"tp_{timepoint}_wbns_background_removed.tif"), only_structures_wbns)
+                            tiff.imwrite(os.path.join(output_dir_wbns, f"{series_config.id}_tp_{timepoint}_wbns_background_removed.tif"), only_structures_wbns)
                         points_dir = os.path.join(output_dir, "surface_voxels_mask")
                         os.makedirs(points_dir, exist_ok=True)
-                        tiff.imwrite(os.path.join(points_dir, f"tp_{timepoint}_wbns_surface_voxels_true.tif"), sparce_voxels_on_embryo_surface)
+                        tiff.imwrite(os.path.join(points_dir, f"{series_config.id}_tp_{timepoint}_wbns_surface_voxels_true.tif"), sparce_voxels_on_embryo_surface)
                 else:
                     logging.info("Peeling: Using WBNS wavelet based background subtraction for detecting only embryo structures.")
                     sparce_voxels_on_embryo_surface, only_structures_wbns = detect_embryo_surface_wbns(downsampled_zyx, threshold=thresholding_after_wbns)
@@ -1185,13 +1186,13 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
                     if do_save_wbns_output:
                         output_dir_wbns = os.path.join(output_dir, "wbns_output")
                         os.makedirs(output_dir_wbns, exist_ok=True)
-                        tiff.imwrite(os.path.join(output_dir_wbns, f"tp_{timepoint}_wbns_background_removed.tif"), only_structures_wbns)
+                        tiff.imwrite(os.path.join(output_dir_wbns, f"{series_config.id}_tp_{timepoint}_wbns_background_removed.tif"), only_structures_wbns)
                 if do_save_points:
                     # Only save the points file if it was computed (not loaded)
                     if not load_surface_voxels_from_file:
                         points_dir = os.path.join(output_dir, "surface_voxels_mask")
                         os.makedirs(points_dir, exist_ok=True)
-                        tiff.imwrite(os.path.join(points_dir, f"tp_{timepoint}_wbns_surface_voxels_true.tif"), sparce_voxels_on_embryo_surface)
+                        tiff.imwrite(os.path.join(points_dir, f"{series_config.id}_tp_{timepoint}_wbns_surface_voxels_true.tif"), sparce_voxels_on_embryo_surface)
                     do_save_points = False
 
         print(f"Number of detected points: {len(points)}")
@@ -1204,7 +1205,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         if do_save_points:
             points_dir = os.path.join(output_dir, "surface_points")
             os.makedirs(points_dir, exist_ok=True)
-            np.save(os.path.join(points_dir, f"tp_{timepoint}_surface_points.npy"), points)
+            np.save(os.path.join(points_dir, f"{series_config.id}_tp_{timepoint}_surface_points.npy"), points)
 
         # Create a volume mask from the points
         logging.info("Peeling: Converting points to mask")
@@ -1224,10 +1225,10 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
             logging.debug(f"Saving masks to disk")
             mask_dir = os.path.join(output_dir, "substraction_embryo_mask")
             os.makedirs(mask_dir, exist_ok=True)
-            tiff.imwrite(os.path.join(mask_dir, f"tp_{timepoint}_mask.tif"), mask_np)
-            np.save(os.path.join(mask_dir, f"tp_{timepoint}_upscaled_mask.npy"), mask_upscaled)
+            tiff.imwrite(os.path.join(mask_dir, f"{series_config.id}_tp_{timepoint}_mask.tif"), mask_np)
+            np.save(os.path.join(mask_dir, f"{series_config.id}_tp_{timepoint}_upscaled_mask.npy"), mask_upscaled)
             dist_mask = embryo_to_surface_dist_mask(mask_upscaled, -10, 20) ################################################################## DEBUG
-            tiff.imwrite(os.path.join(mask_dir, f"tp_{timepoint}_distance_mask.tif"), dist_mask)
+            tiff.imwrite(os.path.join(mask_dir, f"{series_config.id}_tp_{timepoint}_distance_mask.tif"), dist_mask)
             
     else: 
         logging.info("Peeling: Using provided mask")
@@ -1241,7 +1242,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         save_tiff_to_subfolder(peeled_volume,
                                output_dir,
                                "peeled_volume",
-                               f"tp_{timepoint}_peeled_volume.tif",
+                               f"{series_config.id}_tp_{timepoint}_peeled_volume.tif",
                                np.uint8)
 
     if do_save_z_max_projection:
@@ -1249,7 +1250,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         save_tiff_to_subfolder(max_proj,
                                output_dir,
                                "z_max_projection",
-                               f"tp_{timepoint}_z_max_projection.tif",
+                               f"{series_config.id}_tp_{timepoint}_z_max_projection.tif",
                                np.uint8)
         ############################################################################################################################### DEBUG
         dist_mask = embryo_to_surface_dist_mask(mask_upscaled, -10, 30)
@@ -1257,16 +1258,16 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         save_tiff_to_subfolder(onion_z_stack,
                         output_dir,
                         "z_onion_stack",
-                        f"tp_{timepoint}_z_onion_stack.tif",
+                        f"{series_config.id}_tp_{timepoint}_z_onion_stack.tif",
                         np.uint8)
-        chunk_ranges=[range(3,12), range(23,30)]
+        chunk_ranges=[range(1,2), range(29,30)]
         if series_config.onion_layer_ranges:
             chunk_ranges = series_config.onion_layer_ranges
         onion_z_stack = embryo_to_onion_z_stack(full_res_zyx, dist_mask, chunk_ranges=chunk_ranges)
         save_tiff_to_subfolder(onion_z_stack,
                         output_dir,
                         "z_onion_stack",
-                        f"tp_{timepoint}_z_onion_stack_ranges.tif",
+                        f"{series_config.id}_tp_{timepoint}_z_onion_stack_ranges.tif",
                         np.uint8)
 
     if do_inverse_peeling:
@@ -1278,12 +1279,12 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         save_tiff_to_subfolder(np.max(inv_peeled_volume, axis=0),
                                output_dir,
                                "z_max_projection_inv_peeled",
-                               f"tp_{timepoint}_inv_peeled_z_max_projection.tif",
+                               f"{series_config.id}_tp_{timepoint}_inv_peeled_z_max_projection.tif",
                                np.uint8)
         save_tiff_to_subfolder(inv_peeled_volume,
                                output_dir,
                                "inv_peeled_volume",
-                               f"tp_{timepoint}_inv_peeled_volume.tif",
+                               f"{series_config.id}_tp_{timepoint}_inv_peeled_volume.tif",
                                np.uint8)
 
     if do_cylindrical_cartography:
@@ -1300,7 +1301,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         save_tiff_to_subfolder(projection_cpu,
                                output_dir,
                                "cylindrical_cartography",
-                               f"tp_{timepoint}_cyl_proj.tif")
+                               f"{series_config.id}_tp_{timepoint}_cyl_proj.tif")
     
     if do_distortion_maps and do_cylindrical_cartography and not isinstance(peeling_mask, np.ndarray):
         logging.info("Starting distortion maps calculaiton for cylindrical cartography")
@@ -1319,8 +1320,8 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
         )
         distortion_maps_dir = os.path.join(output_dir, "distortion_maps")
         os.makedirs(distortion_maps_dir, exist_ok=True)
-        verti_dist_map_f = os.path.join(distortion_maps_dir, f"tp_{timepoint}_vertical_distortion_map.npy")
-        horiz_dist_map_f = os.path.join(distortion_maps_dir, f"tp_{timepoint}_horizontal_distortion_map.npy")
+        verti_dist_map_f = os.path.join(distortion_maps_dir, f"{series_config.id}_tp_{timepoint}_vertical_distortion_map.npy")
+        horiz_dist_map_f = os.path.join(distortion_maps_dir, f"{series_config.id}_tp_{timepoint}_horizontal_distortion_map.npy")
         np.save(verti_dist_map_f, vertical_map)
         np.save(horiz_dist_map_f, horizontal_map)
         if save_distortion_map_vis:
@@ -1332,7 +1333,7 @@ def peel_embryo_with_cartography(full_res_zyx: np.ndarray,
             )
             heatmap_dir = os.path.join(distortion_maps_dir, "heatmaps")
             os.makedirs(heatmap_dir, exist_ok=True)
-            heatmap.save(os.path.join(heatmap_dir, f"tp_{timepoint}_distortion_heatmaps.png"))
+            heatmap.save(os.path.join(heatmap_dir, f"{series_config.id}_tp_{timepoint}_distortion_heatmaps.png"))
     return True, mask_upscaled
 
 
@@ -1362,7 +1363,7 @@ def process_timepoint(ill_file_paths: list,
     if do_save_thresholding_mask:
         mask_dir = os.path.join(output_dir, "thresholding_mask")
         os.makedirs(mask_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(mask_dir, f"thresholding_mask_tp_{timepoint}.tif"), mask)
+        tiff.imwrite(os.path.join(mask_dir, f"{series_config.id}_thresholding_mask_tp_{timepoint}.tif"), mask)
     # Crop around embryo. For the first timepoint, we call without target_crop_shape.
     # For subsequent timepoints, crop_around_embryo should use the provided target shape.
     if target_crop_shape is None:
@@ -1381,13 +1382,13 @@ def process_timepoint(ill_file_paths: list,
     if do_save_down_cropped:
         down_dir = os.path.join(output_dir, "downsampled_cropped")
         os.makedirs(down_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(down_dir, f"down_cropped_tp_{timepoint}.tif"), down_cropped)
+        tiff.imwrite(os.path.join(down_dir, f"{series_config.id}_down_cropped_tp_{timepoint}.tif"), down_cropped)
     
     full_res_iso = get_isotropic_volume(cropped_volume)
     if do_save_cropped_iso:
         iso_dir = os.path.join(output_dir, "cropped_isotropic_embryo")
         os.makedirs(iso_dir, exist_ok=True)
-        tiff.imwrite(os.path.join(iso_dir, f"cropped_isotropic_tp_{timepoint}.tif"), full_res_iso)
+        tiff.imwrite(os.path.join(iso_dir, f"{series_config.id}_cropped_isotropic_tp_{timepoint}.tif"), full_res_iso)
     
     peel_success, peeling_mask_curr_tp = peel_embryo_with_cartography(
         full_res_iso, 
@@ -1411,7 +1412,7 @@ def process_timepoint(ill_file_paths: list,
 
 def process_time_series(timeseries_key: str, 
                         timepoints_dict: dict, 
-                        base_out_dir: str, 
+                        series_out_dir: str, 
                         compute_backend: Backend,
                         reuse_peeling_mask: bool,
                         series_config: TimeSeriesConfig,
@@ -1426,8 +1427,6 @@ def process_time_series(timeseries_key: str,
       timepoints_dict: dictionary with keys as timepoint integers and values as list of file paths
       base_out_dir: base output folder where time series folders are created
     """
-    series_out_dir = os.path.join(base_out_dir, timeseries_key)
-    os.makedirs(series_out_dir, exist_ok=True)
     logging.info(f"Processing time series: {timeseries_key}")
     print(f"Processing time series: {timeseries_key}")
     
@@ -1565,15 +1564,20 @@ def main():
             if any(pattern in series_key for pattern in args.skip_patterns):
                 logging_broadcast(f"Skipping time series '{series_key}' due to matching skip pattern {args.skip_patterns}")
                 continue
-            series_config = config.get_default_series_config()
+            series_config = config.get_default_series_config(series_key)
             for series_id in config.time_series_overrides.keys():
                 if series_id in series_key:
                     series_config = config.get_series_config(series_id=series_id)
-            logging.info(f"Using the following time seires config object: {series_config}")
+            logging.info(f"Using the following time seires config object: {series_config}\n CAREFUL, NOT ALL FIELDS ARE TAKEN FROM CONFIG AT THE MOMENT")
+            if config.create_subfolders:
+                series_out_dir = os.path.join(output_folder, series_key)
+            else:
+                series_out_dir = output_folder
+            os.makedirs(series_out_dir, exist_ok=True)
             process_time_series(
                 series_key, 
                 tp_dict, 
-                output_folder, 
+                series_out_dir, 
                 compute_backend, 
                 series_config=series_config,
                 reuse_peeling_mask=args.reuse_peeling, 
